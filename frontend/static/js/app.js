@@ -822,7 +822,7 @@ async function renderPrintPreview(container, params) {
     // 从API获取轮廓数据
     let item = null;
     try {
-        const data = await API.request('/training/contours');
+        const data = await API.request("GET", "/training/contours", null, true);
         const contours = data.contours || [];
         item = contours.find(c => c.id === contourId);
     } catch (e) {
