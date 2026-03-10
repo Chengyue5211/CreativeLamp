@@ -72,6 +72,14 @@ async def index():
     return html_path.read_text(encoding="utf-8")
 
 
+@app.get("/sw.js")
+async def service_worker():
+    """Service Worker — 必须从根路径提供以获取正确的scope"""
+    from fastapi.responses import FileResponse
+    sw_path = BASE_DIR / "frontend" / "static" / "sw.js"
+    return FileResponse(str(sw_path), media_type="application/javascript")
+
+
 if __name__ == "__main__":
     import uvicorn
     from core.config import HOST, PORT

@@ -28,5 +28,10 @@
     <script src="/static/js/transform-svg.js"></script>
     <script src="/static/js/contour-svg.js"></script>
     <script src="/static/js/app.js"></script>
+    <script>
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
+        }
+    </script>
 </body>
 </html>
