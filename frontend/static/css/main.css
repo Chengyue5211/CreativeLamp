@@ -578,9 +578,61 @@ body {
     background: var(--success);
 }
 
+/* === Range Input (评分滑块) === */
+input[type="range"] {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 6px;
+    border-radius: 3px;
+    background: var(--gray-200);
+    outline: none;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.2);
+    cursor: pointer;
+    border: 3px solid currentColor;
+}
+
+/* === Page Transitions === */
+.page {
+    animation: fadeIn 0.2s ease;
+}
+
+@keyframes fadeIn {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+/* === Image Loading === */
+.card img {
+    background: var(--gray-100);
+    transition: opacity 0.3s;
+}
+
+/* === Print Styles === */
+@media print {
+    .header, .tab-bar, .btn, .toast { display: none !important; }
+    .page { padding: 0; }
+    .app { max-width: none; box-shadow: none; }
+}
+
 /* === Responsive === */
 @media (min-width: 481px) {
     .app {
         box-shadow: var(--shadow-lg);
+    }
+}
+
+/* === Safe area for notch phones === */
+@supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .page {
+        padding-bottom: calc(80px + env(safe-area-inset-bottom));
     }
 }
