@@ -142,8 +142,19 @@ function renderRegister(container) {
 
 async function renderParentHome(container) {
     try {
-        const resp = await API.getChildren();
-        const children = resp.children || [];
+        const childResp = await API.getChildren();
+        const children = childResp.children || [];
+
+        // 尝试获取仪表盘数据
+        let dashboard = null;
+        try {
+            dashboard = await API.request("GET", "/parent/dashboard");
+        } catch (e) { /* 忽略 */ }
+        const dashChildren = dashboard?.children || [];
+
+        // 合并dashboard数据到children
+        const childMap = {};
+        dashChildren.forEach(dc => { childMap[dc.id] = dc; });
 
         container.innerHTML = `
             <div class="header">
@@ -157,28 +168,55 @@ async function renderParentHome(container) {
                 <div class="welcome-section">
                     <div class="welcome-avatar">👨‍👩‍👧</div>
                     <div class="welcome-name">${escapeHtml(APP.user?.nickname || "家长")}</div>
-                    <p style="color:var(--gray-500); font-size:0.85rem; margin-top:8px;">选择孩子，开始今天的创作之旅</p>
+                    <p style="color:var(--gray-500); font-size:0.85rem; margin-top:8px;">选择孩子，进入创作空间</p>
                 </div>
 
                 <div class="section-title">我的孩子</div>
-                ${children.length > 0 ? children.map(child => `
+                ${children.length > 0 ? children.map(child => {
+                    const dc = childMap[child.id] || {};
+                    const stats = dc.stats || {};
+                    return `
                     <div class="card" onclick="selectChild(${child.id})" style="cursor:pointer;">
-                        <div class="card-title">
-                            <span style="font-size:1.5rem;">${child.gender === 'female' ? '👧' : '👦'}</span>
-                            ${escapeHtml(child.nickname)}
+                        <div style="display:flex; align-items:center; gap:12px;">
+                            <div style="font-size:2.2rem;">${child.gender === 'female' ? '👧' : '👦'}</div>
+                            <div style="flex:1;">
+                                <div style="font-weight:700; font-size:1rem;">${escapeHtml(child.nickname)}</div>
+                                <div style="font-size:0.8rem; color:var(--gray-500);">${child.age}岁 · ${levelName(child.level_grade)}</div>
+                            </div>
+                            <div style="text-align:right;">
+                                <div style="font-size:0.75rem; color:var(--gray-400);">作品</div>
+                                <div style="font-weight:700; font-size:1.2rem; color:var(--primary-600);">${stats.total_works || 0}</div>
+                            </div>
                         </div>
-                        <div class="card-subtitle">${child.age}岁 · ${levelName(child.level_grade)}</div>
+                        ${stats.total_tasks > 0 ? `
+                            <div style="margin-top:8px; display:flex; gap:12px; font-size:0.75rem; color:var(--gray-400);">
+                                <span>任务 ${stats.total_tasks || 0}</span>
+                                <span>完成 ${stats.completed_tasks || 0}</span>
+                            </div>
+                        ` : `
+                            <div style="margin-top:6px; font-size:0.75rem; color:var(--accent-400);">点击进入，开始创作之旅 →</div>
+                        `}
                     </div>
-                `).join("") : `
-                    <div class="empty-state">
-                        <div class="empty-state-icon">👶</div>
-                        <p>还没有添加孩子</p>
+                    `;
+                }).join("") : `
+                    <div style="text-align:center; padding:30px;">
+                        <div style="font-size:3rem; margin-bottom:12px;">👶</div>
+                        <p style="color:var(--gray-500);">还没有添加孩子</p>
+                        <p style="font-size:0.8rem; color:var(--gray-400); margin-top:4px;">添加孩子后，就可以开始创作之旅了</p>
                     </div>
                 `}
 
-                <button class="btn btn-outline btn-large" onclick="navigate('add-child')" style="margin-top:16px;">
+                <button class="btn btn-outline btn-large" onclick="navigate('add-child')" style="margin-top:12px;">
                     + 添加孩子
                 </button>
+
+                <div class="card" style="margin-top:24px; background:var(--gray-50); text-align:center; padding:16px;">
+                    <p style="font-size:0.82rem; color:var(--gray-500); line-height:1.6;">
+                        没有原型就没有变形<br>
+                        没有变形就没有创造
+                    </p>
+                    <p style="font-size:0.7rem; color:var(--gray-400); margin-top:6px;">— 绘创前程教育理念</p>
+                </div>
             </div>
         `;
     } catch (e) {
