@@ -453,8 +453,20 @@ async function renderTaskDetail(container, params) {
                     <button class="btn btn-accent btn-large" onclick="navigate('upload-work', {taskId: ${task.task_id}})">
                         📷 拍照上传作品
                     </button>
+                ` : task.status === "submitted" ? `
+                    <div class="card" style="text-align:center; background:#E8F5F1; border-color:#4E8D7C;">
+                        <div style="font-size:2rem;">✅</div>
+                        <div style="font-weight:700; color:#4E8D7C; margin-top:4px;">作品已提交</div>
+                        <p style="font-size:0.82rem; color:var(--gray-500); margin-top:4px;">等待评价中</p>
+                    </div>
+                    <button class="btn btn-outline btn-large" onclick="navigate('upload-work', {taskId: ${task.task_id}})" style="margin-top:8px;">
+                        📷 再画一幅
+                    </button>
                 ` : `
-                    <button class="btn btn-primary btn-large btn-disabled">已完成</button>
+                    <div class="card" style="text-align:center; background:#FFF8F0; border-color:#D98B5F;">
+                        <div style="font-size:2rem;">🌟</div>
+                        <div style="font-weight:700; color:#D98B5F; margin-top:4px;">已评价完成</div>
+                    </div>
                 `}
             </div>
         `;
@@ -1445,7 +1457,11 @@ async function doUploadWork() {
         }
 
         showToast("作品上传成功！", "success");
-        navigate("gallery");
+        if (json.work_id) {
+            navigate("work-detail", { workId: json.work_id });
+        } else {
+            navigate("gallery");
+        }
     } catch (e) {
         showToast(e.message, "error");
     }

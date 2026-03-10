@@ -74,11 +74,34 @@ async def upload_work(
         )
         work_id = cursor.lastrowid
 
-        # 写入元数据
+        # 写入元数据（从任务获取模块信息）
+        module = None
+        if task_id > 0:
+            task_row = conn.execute(
+                """SELECT tt.module FROM tasks t
+                   JOIN task_templates tt ON t.template_id = tt.id
+                   WHERE t.id = ? AND t.child_id = ?""",
+                (task_id, child_id),
+            ).fetchone()
+            if task_row:
+                module = task_row["module"]
+                # 自动更新任务状态为submitted
+                conn.execute(
+                    "UPDATE tasks SET status = 'submitted', submitted_at = datetime('now') WHERE id = ? AND status IN ('assigned', 'in_progress')",
+                    (task_id,),
+                )
+
         conn.execute(
             """INSERT INTO work_metadata (work_id, module) VALUES (?, ?)""",
-            (work_id, None),
+            (work_id, module),
         )
+
+        # 如果指定了轮廓ID，记入元数据
+        if contour_id:
+            conn.execute(
+                "UPDATE work_metadata SET prototype_tags_json = ? WHERE work_id = ?",
+                (json.dumps([{"type": "contour", "id": contour_id}]), work_id),
+            )
 
     return {
         "work_id": work_id,
