@@ -274,8 +274,8 @@ async function renderChildHome(container) {
 
             <div class="tab-bar">
                 <button class="tab-item active"><span class="tab-icon">🏠</span>首页</button>
-                <button class="tab-item" onclick="doGenerateTask()"><span class="tab-icon">🎨</span>训练</button>
-                <button class="tab-item"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
                 <button class="tab-item"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
@@ -375,20 +375,38 @@ async function renderTaskDetail(container, params) {
                     ` : ""}
                 ` : ""}
 
-                <div class="demo-area">
-                    <div style="font-size:3rem; margin-bottom:8px;">🖍️</div>
-                    <div class="demo-instruction">
-                        拿出纸和笔，开始你的创作吧！<br>
-                        完成后拍照上传
+                ${task.requirement?.recommended_contour ? `
+                    <div class="card" style="background:linear-gradient(135deg, #FFF8F0, #FFF4EB); border-color:#E8C090; text-align:center;">
+                        <div class="card-title">📋 推荐的图形底稿</div>
+                        <div style="background:#fff; border-radius:12px; padding:12px; margin:8px 0;">
+                            ${typeof ContourSVG !== 'undefined' ? ContourSVG.generate(task.requirement.recommended_contour.id) : ''}
+                        </div>
+                        <div style="font-weight:700; font-size:1rem; margin:4px 0;">${escapeHtml(task.requirement.recommended_contour.name)}</div>
+                        <button class="btn btn-primary" onclick="navigate('print-preview', {contourId:'${task.requirement.recommended_contour.id}'})" style="margin-top:8px;">
+                            🖨️ 下载打印这个图形
+                        </button>
+                        <p style="font-size:0.75rem; color:var(--gray-400); margin-top:6px;">
+                            也可以去图形库选其他图形哦
+                        </p>
                     </div>
-                </div>
+                ` : `
+                    <div class="card" style="text-align:center; padding:20px; background:var(--gray-50);">
+                        <div style="font-size:2.5rem; margin-bottom:8px;">🖍️</div>
+                        <p style="color:var(--gray-600); font-size:0.9rem; margin-bottom:10px;">
+                            拿出纸和笔，开始你的创作吧！
+                        </p>
+                        <button class="btn btn-outline" onclick="navigate('contours')" style="font-size:0.85rem;">
+                            去图形库选个图形打印
+                        </button>
+                    </div>
+                `}
 
                 ${task.status === "assigned" ? `
                     <button class="btn btn-primary btn-large" onclick="startTask(${task.task_id})">
                         开始创作
                     </button>
                 ` : task.status === "in_progress" ? `
-                    <button class="btn btn-accent btn-large" onclick="showToast('拍照上传功能即将开放', 'info')">
+                    <button class="btn btn-accent btn-large" onclick="navigate('upload-work', {taskId: ${task.task_id}})">
                         📷 拍照上传作品
                     </button>
                 ` : `
@@ -697,6 +715,7 @@ function renderPrintPreview(container, params) {
 // ============================================================
 function renderUploadWork(container, params) {
     const contourId = params?.contourId || '';
+    const taskId = params?.taskId || 0;
     const contourName = (contourId && typeof ContourSVG !== 'undefined' && ContourSVG.library[contourId])
         ? ContourSVG.library[contourId].name : '';
 
@@ -733,6 +752,7 @@ function renderUploadWork(container, params) {
             </div>
 
             ${contourId ? `<input type="hidden" id="work-contour-id" value="${contourId}">` : ''}
+            ${taskId ? `<input type="hidden" id="work-task-id" value="${taskId}">` : ''}
 
             <button class="btn btn-primary btn-large" onclick="doUploadWork()">
                 上传到我的展馆
@@ -1004,6 +1024,8 @@ async function doUploadWork() {
 
     const contourId = document.getElementById("work-contour-id")?.value;
     if (contourId) formData.append("contour_id", contourId);
+    const taskId = document.getElementById("work-task-id")?.value;
+    if (taskId) formData.append("task_id", taskId);
 
     try {
         const headers = {};

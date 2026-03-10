@@ -4,6 +4,7 @@
 
 双训练体系：
 - 模块A：原型组合创意绘画（108种线条原型的识别→模仿→补全→迁移→创作）
+  - 轮廓装饰任务：从轮廓图形库选一个图形（动物/植物/物品），用线条原型装饰
 - 模块B：图形变形与结构生成（9种基础图形 × 7种变形动作）
   7种动作：拉长/切分/叠加/拼接/缺口与添加/延展/增加
 """
@@ -18,6 +19,43 @@ from data.transforms import (
     TRANSFORM_ACTIONS, COMBINATION_MODES, INCREASE_SUBTYPES,
     MODULE_B_DIFFICULTY, MODULE_B_TASK_TYPES, MODULE_B_OUTPUT_TYPES,
 )
+
+# ============================================================
+# 轮廓图形库（与前端contour-svg.js同步）
+# 用于任务生成时推荐轮廓
+# ============================================================
+CONTOUR_LIBRARY = [
+    {"id": "cat", "name": "小猫", "category": "animals", "difficulty": 1},
+    {"id": "butterfly", "name": "蝴蝶", "category": "animals", "difficulty": 2},
+    {"id": "fish", "name": "小鱼", "category": "animals", "difficulty": 1},
+    {"id": "bird", "name": "小鸟", "category": "animals", "difficulty": 2},
+    {"id": "elephant", "name": "大象", "category": "animals", "difficulty": 3},
+    {"id": "turtle", "name": "乌龟", "category": "animals", "difficulty": 2},
+    {"id": "rabbit", "name": "兔子", "category": "animals", "difficulty": 1},
+    {"id": "snail", "name": "蜗牛", "category": "animals", "difficulty": 2},
+    {"id": "flower_simple", "name": "花朵", "category": "plants", "difficulty": 1},
+    {"id": "tree", "name": "大树", "category": "plants", "difficulty": 2},
+    {"id": "cactus", "name": "仙人掌", "category": "plants", "difficulty": 1},
+    {"id": "leaf", "name": "树叶", "category": "plants", "difficulty": 1},
+    {"id": "mushroom", "name": "蘑菇", "category": "plants", "difficulty": 1},
+    {"id": "sunflower", "name": "向日葵", "category": "plants", "difficulty": 2},
+    {"id": "house", "name": "房子", "category": "objects", "difficulty": 2},
+    {"id": "vase", "name": "花瓶", "category": "objects", "difficulty": 2},
+    {"id": "cup", "name": "杯子", "category": "objects", "difficulty": 1},
+    {"id": "umbrella", "name": "雨伞", "category": "objects", "difficulty": 2},
+    {"id": "tshirt", "name": "T恤", "category": "objects", "difficulty": 2},
+    {"id": "kite", "name": "风筝", "category": "objects", "difficulty": 1},
+    {"id": "cake", "name": "蛋糕", "category": "food", "difficulty": 2},
+    {"id": "icecream", "name": "冰淇淋", "category": "food", "difficulty": 1},
+    {"id": "pizza", "name": "比萨饼", "category": "food", "difficulty": 1},
+    {"id": "unicorn", "name": "独角兽", "category": "fantasy", "difficulty": 3},
+    {"id": "rocket", "name": "火箭", "category": "fantasy", "difficulty": 2},
+    {"id": "castle", "name": "城堡", "category": "fantasy", "difficulty": 3},
+    {"id": "dragon", "name": "小龙", "category": "fantasy", "difficulty": 3},
+    {"id": "car", "name": "小汽车", "category": "vehicles", "difficulty": 2},
+    {"id": "boat", "name": "帆船", "category": "vehicles", "difficulty": 2},
+    {"id": "airplane", "name": "飞机", "category": "vehicles", "difficulty": 2},
+]
 
 
 # ============================================================
@@ -337,11 +375,26 @@ def _generate_module_a_task(child_id: int, config: dict, age: int) -> dict:
     composition = random.choice(modes)
     comp_info = next((m for m in COMBINATION_MODES if m["id"] == composition), None)
 
+    # 为轮廓装饰/创作/迁移任务推荐一个轮廓图形
+    recommended_contour = None
+    if task_type in ("contour_decorate", "create", "transfer", "expand"):
+        # 根据难度选择合适的轮廓
+        max_diff = min(3, 1 + num_protos // 2)
+        suitable = [c for c in CONTOUR_LIBRARY if c["difficulty"] <= max_diff]
+        if suitable:
+            recommended_contour = random.choice(suitable)
+
     task_info = TASK_TYPE_INFO_A[task_type]
     proto_names = "、".join(p["name_zh"] for p in selected_prototypes)
-    title = f"{task_info['name']}：{proto_names}"
 
-    desc_parts = [task_info["instruction"]]
+    if recommended_contour:
+        title = f"{task_info['name']}：用{proto_names}装饰{recommended_contour['name']}"
+        instruction = f"去图形库找到「{recommended_contour['name']}」，下载打印出来，用{proto_names}把它装饰得漂漂亮亮！"
+    else:
+        title = f"{task_info['name']}：{proto_names}"
+        instruction = task_info["instruction"]
+
+    desc_parts = [instruction]
     if comp_info:
         desc_parts.append(f"呈现方式：{comp_info['name_zh']}——{comp_info['description']}")
 
@@ -361,10 +414,15 @@ def _generate_module_a_task(child_id: int, config: dict, age: int) -> dict:
                 {"id": p["id"], "name_zh": p["name_zh"], "category": p["category"]}
                 for p in selected_prototypes
             ],
+            "recommended_contour": recommended_contour,
+            "guiding_questions": [
+                f"想想看，{proto_names}可以怎样组合？",
+                f"试试用{comp_info['name_zh'] if comp_info else '不同方式'}来排列它们",
+            ] if comp_info else [],
         },
         "estimated_minutes": task_info["estimated_minutes"],
         "task_type_name": task_info["name"],
-        "instruction": task_info["instruction"],
+        "instruction": instruction,
         "icon": task_info["icon"],
         "prototypes": selected_prototypes,
         "transforms": [],

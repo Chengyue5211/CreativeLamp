@@ -7,7 +7,7 @@ from core.security import get_current_user
 from services.training_service import (
     generate_daily_task, get_today_tasks, get_task_detail,
     update_task_status, get_prototype_library, get_transform_library,
-    LEVEL_CONFIG, TASK_TYPE_INFO
+    LEVEL_CONFIG, TASK_TYPE_INFO, CONTOUR_LIBRARY
 )
 
 router = APIRouter()
@@ -35,6 +35,17 @@ async def api_list_increase_subtypes():
     """获取增加动作的5种子类型"""
     from data.transforms import INCREASE_SUBTYPES
     return {"subtypes": INCREASE_SUBTYPES, "total": len(INCREASE_SUBTYPES)}
+
+
+@router.get("/contours")
+async def api_list_contours(
+    category: Optional[str] = None,
+):
+    """获取轮廓图形库"""
+    contours = CONTOUR_LIBRARY
+    if category:
+        contours = [c for c in contours if c["category"] == category]
+    return {"contours": contours, "total": len(contours)}
 
 
 @router.get("/levels")
