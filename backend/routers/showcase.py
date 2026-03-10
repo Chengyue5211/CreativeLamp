@@ -1,6 +1,7 @@
 """
-展示系统路由 — 展馆/成长档案/进展追踪
+展示系统路由 — 展馆/成长档案/进展追踪/成长报告
 """
+import json
 from fastapi import APIRouter, Depends, HTTPException
 
 from core.database import get_db
@@ -78,6 +79,43 @@ async def get_growth_archive(
             (child_id,),
         ).fetchall()
 
+        # 评价维度平均分（已评价的作品）
+        eval_avg = conn.execute(
+            """SELECT
+               COUNT(*) as evaluated_count,
+               AVG(ai_score_originality) as avg_originality,
+               AVG(ai_score_detail) as avg_detail,
+               AVG(ai_score_composition) as avg_composition,
+               AVG(ai_score_expression) as avg_expression
+               FROM works
+               WHERE child_id = ? AND ai_score_originality IS NOT NULL""",
+            (child_id,),
+        ).fetchone()
+
+        # 最佳作品（综合分最高）
+        best_work = conn.execute(
+            """SELECT id, title, thumbnail_path, image_path,
+                      (ai_score_originality + ai_score_detail + ai_score_composition + ai_score_expression) / 4.0 as avg_score
+               FROM works
+               WHERE child_id = ? AND ai_score_originality IS NOT NULL
+               ORDER BY avg_score DESC LIMIT 1""",
+            (child_id,),
+        ).fetchone()
+
+        # 最近评价趋势（最近5件已评价作品的分数）
+        eval_trend = conn.execute(
+            """SELECT id, title,
+                      ai_score_originality, ai_score_detail,
+                      ai_score_composition, ai_score_expression,
+                      ai_evaluated_at
+               FROM works
+               WHERE child_id = ? AND ai_score_originality IS NOT NULL
+               ORDER BY ai_evaluated_at DESC LIMIT 5""",
+            (child_id,),
+        ).fetchall()
+
+    evaluated_count = eval_avg["evaluated_count"] if eval_avg else 0
+
     return {
         "child": {
             "nickname": child["nickname"],
@@ -92,7 +130,34 @@ async def get_growth_archive(
             "in_progress_tasks": in_progress_tasks,
             "module_a_tasks": module_a_tasks,
             "module_b_tasks": module_b_tasks,
+            "evaluated_works": evaluated_count,
         },
+        "ability_radar": {
+            "originality": round(eval_avg["avg_originality"] or 0, 1),
+            "detail": round(eval_avg["avg_detail"] or 0, 1),
+            "composition": round(eval_avg["avg_composition"] or 0, 1),
+            "expression": round(eval_avg["avg_expression"] or 0, 1),
+        } if evaluated_count > 0 else None,
+        "best_work": {
+            "id": best_work["id"],
+            "title": best_work["title"],
+            "thumbnail_path": best_work["thumbnail_path"] or best_work["image_path"],
+            "avg_score": round(best_work["avg_score"], 1),
+        } if best_work else None,
+        "eval_trend": [
+            {
+                "id": e["id"],
+                "title": e["title"],
+                "scores": {
+                    "originality": e["ai_score_originality"],
+                    "detail": e["ai_score_detail"],
+                    "composition": e["ai_score_composition"],
+                    "expression": e["ai_score_expression"],
+                },
+                "evaluated_at": e["ai_evaluated_at"],
+            }
+            for e in eval_trend
+        ],
         "recent_works": [
             {
                 "id": w["id"],

@@ -892,6 +892,17 @@ async function renderGrowth(container) {
         const child = APP.currentChild || {};
         const stats = data?.stats || {};
         const recentWorks = data?.recent_works || [];
+        const radar = data?.ability_radar;
+        const bestWork = data?.best_work;
+        const evalTrend = data?.eval_trend || [];
+
+        // 能力维度配色
+        const dims = [
+            { key: "originality", name: "原创性", icon: "💡", color: "#D98B5F" },
+            { key: "detail", name: "细节", icon: "🔍", color: "#4E8D7C" },
+            { key: "composition", name: "构图", icon: "📐", color: "#89B4D4" },
+            { key: "expression", name: "表达", icon: "🎨", color: "#9B6DBF" },
+        ];
 
         container.innerHTML = `
             <div class="header" style="background:linear-gradient(135deg, #6BAF9C, #4E8D7C);">
@@ -903,33 +914,99 @@ async function renderGrowth(container) {
             </div>
             <div class="page">
                 <!-- 成长数据卡片 -->
-                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
-                    <div class="card" style="text-align:center; background:var(--primary-50);">
-                        <div style="font-size:2rem; font-weight:800; color:var(--primary-600);">${stats.total_works || 0}</div>
-                        <div style="font-size:0.8rem; color:var(--gray-500);">件作品</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
+                    <div class="card" style="text-align:center; background:var(--primary-50); padding:12px 6px;">
+                        <div style="font-size:1.8rem; font-weight:800; color:var(--primary-600);">${stats.total_works || 0}</div>
+                        <div style="font-size:0.72rem; color:var(--gray-500);">件作品</div>
                     </div>
-                    <div class="card" style="text-align:center; background:var(--accent-50);">
-                        <div style="font-size:2rem; font-weight:800; color:var(--accent-600);">${stats.completed_tasks || 0}</div>
-                        <div style="font-size:0.8rem; color:var(--gray-500);">已完成任务</div>
+                    <div class="card" style="text-align:center; background:var(--accent-50); padding:12px 6px;">
+                        <div style="font-size:1.8rem; font-weight:800; color:var(--accent-600);">${stats.completed_tasks || 0}</div>
+                        <div style="font-size:0.72rem; color:var(--gray-500);">完成任务</div>
                     </div>
-                    <div class="card" style="text-align:center;">
-                        <div style="font-size:1.5rem; font-weight:700; color:#4E8D7C;">${stats.module_a_tasks || 0}</div>
-                        <div style="font-size:0.75rem; color:var(--gray-500);">模块A · 原型组合</div>
-                    </div>
-                    <div class="card" style="text-align:center;">
-                        <div style="font-size:1.5rem; font-weight:700; color:#D98B5F;">${stats.module_b_tasks || 0}</div>
-                        <div style="font-size:0.75rem; color:var(--gray-500);">模块B · 图形变形</div>
+                    <div class="card" style="text-align:center; background:#FFF4EB; padding:12px 6px;">
+                        <div style="font-size:1.8rem; font-weight:800; color:#D98B5F;">${stats.evaluated_works || 0}</div>
+                        <div style="font-size:0.72rem; color:var(--gray-500);">已评价</div>
                     </div>
                 </div>
 
+                <!-- 能力雷达（CSS实现） -->
+                ${radar ? `
+                    <div class="card" style="margin-bottom:14px; background:linear-gradient(135deg, #FAFCFB, #F5FAF8);">
+                        <div class="card-title">🌟 创造力画像</div>
+                        <div style="margin-top:12px;">
+                            ${dims.map(d => {
+                                const score = radar[d.key] || 0;
+                                const pct = Math.round(score * 10);
+                                return `
+                                <div style="margin-bottom:10px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                        <span style="font-size:0.85rem; font-weight:600;">${d.icon} ${d.name}</span>
+                                        <span style="font-size:0.95rem; font-weight:700; color:${d.color};">${score}</span>
+                                    </div>
+                                    <div style="background:#E8E8E8; border-radius:6px; height:8px; overflow:hidden;">
+                                        <div style="background:linear-gradient(90deg, ${d.color}88, ${d.color}); height:100%; width:${pct}%; border-radius:6px; transition:width 0.8s ease;"></div>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                            <div style="text-align:center; margin-top:14px; padding-top:12px; border-top:1px solid #E0E0E0;">
+                                <span style="font-size:0.75rem; color:var(--gray-400);">基于 ${stats.evaluated_works} 件作品的综合评估</span>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <!-- 最佳作品 -->
+                ${bestWork ? `
+                    <div class="card" style="margin-bottom:14px; background:linear-gradient(135deg, #FFF8F0, #FFF4EB); border-color:#E8C090; cursor:pointer;" onclick="navigate('work-detail', {workId:${bestWork.id}})">
+                        <div class="card-title">🏆 最佳作品</div>
+                        <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
+                            <div style="width:60px; height:60px; border-radius:10px; overflow:hidden; background:#F5F5F5; flex-shrink:0;">
+                                ${bestWork.thumbnail_path ? `<img src="${escapeHtml(bestWork.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.5rem;">🎨</div>'}
+                            </div>
+                            <div>
+                                <div style="font-weight:700; font-size:1rem;">${escapeHtml(bestWork.title)}</div>
+                                <div style="font-size:0.85rem; color:#D98B5F; font-weight:600;">综合评分 ${bestWork.avg_score}</div>
+                            </div>
+                        </div>
+                    </div>
+                ` : ''}
+
+                <!-- 评价趋势 -->
+                ${evalTrend.length > 1 ? `
+                    <div class="card" style="margin-bottom:14px;">
+                        <div class="card-title">📈 进步趋势</div>
+                        <div style="margin-top:8px;">
+                            ${evalTrend.slice().reverse().map((e, i) => {
+                                const avg = ((e.scores.originality + e.scores.detail + e.scores.composition + e.scores.expression) / 4).toFixed(1);
+                                const pct = Math.round(avg * 10);
+                                return `
+                                <div style="display:flex; align-items:center; gap:8px; margin-bottom:6px; cursor:pointer;" onclick="navigate('work-detail', {workId:${e.id}})">
+                                    <span style="font-size:0.72rem; color:var(--gray-400); min-width:18px;">${i + 1}</span>
+                                    <div style="flex:1; background:#F0F0F0; border-radius:4px; height:20px; overflow:hidden; position:relative;">
+                                        <div style="background:linear-gradient(90deg, #4E8D7C, #6BAF9C); height:100%; width:${pct}%; border-radius:4px; transition:width 0.5s;"></div>
+                                        <span style="position:absolute; left:8px; top:2px; font-size:0.7rem; color:#333; font-weight:600;">${escapeHtml(e.title)}</span>
+                                    </div>
+                                    <span style="font-size:0.85rem; font-weight:700; color:#4E8D7C; min-width:30px; text-align:right;">${avg}</span>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
                 <!-- 等级进度 -->
-                <div class="card" style="margin-bottom:16px;">
-                    <div class="card-title">训练等级</div>
+                <div class="card" style="margin-bottom:14px;">
+                    <div class="card-title">🏅 训练等级</div>
                     <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
                         <div style="font-size:2rem;">🏅</div>
-                        <div>
+                        <div style="flex:1;">
                             <div style="font-weight:700; font-size:1.1rem; color:var(--primary-600);">${levelName(child.level_grade)}</div>
-                            <div style="font-size:0.8rem; color:var(--gray-500);">${child.age || ''}岁 · 继续努力，向下一级进发！</div>
+                            <div style="font-size:0.8rem; color:var(--gray-500);">${child.age || ''}岁</div>
+                        </div>
+                        <div style="text-align:right;">
+                            <span style="font-size:0.7rem; color:var(--gray-400);">模块A</span>
+                            <span style="font-weight:700; color:#4E8D7C; margin-left:4px;">${stats.module_a_tasks || 0}</span>
+                            <span style="font-size:0.7rem; color:var(--gray-400); margin-left:8px;">模块B</span>
+                            <span style="font-weight:700; color:#D98B5F; margin-left:4px;">${stats.module_b_tasks || 0}</span>
                         </div>
                     </div>
                     <div style="margin-top:10px; background:var(--gray-100); border-radius:10px; height:8px; overflow:hidden;">
@@ -942,7 +1019,7 @@ async function renderGrowth(container) {
                     <div class="section-title">最近的作品</div>
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
                         ${recentWorks.map(w => `
-                            <div style="background:#F5F5F5; border-radius:10px; overflow:hidden; aspect-ratio:1;">
+                            <div style="background:#F5F5F5; border-radius:10px; overflow:hidden; aspect-ratio:1; cursor:pointer;" onclick="navigate('work-detail', {workId:${w.id}})">
                                 ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` :
                                   `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:2rem;">🎨</div>`}
                             </div>
