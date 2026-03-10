@@ -1,7 +1,7 @@
 """
 家长系统路由 — 仪表盘/作品管理/成长报告
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 
 from core.database import get_db
 from core.security import require_parent
@@ -81,9 +81,11 @@ async def parent_dashboard(
 @router.get("/child/{child_id}/works")
 async def get_child_works(
     child_id: int,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=50),
     current_user: dict = Depends(require_parent),
 ):
-    """获取指定孩子的所有作品"""
+    """获取指定孩子的作品（分页）"""
     parent_id = current_user["user_id"]
 
     with get_db() as conn:
@@ -95,14 +97,22 @@ async def get_child_works(
         if not relation:
             raise HTTPException(status_code=403, detail="无权查看该孩子的作品")
 
+        # 总数
+        total = conn.execute(
+            "SELECT COUNT(*) as cnt FROM works WHERE child_id = ?",
+            (child_id,),
+        ).fetchone()["cnt"]
+
+        offset = (page - 1) * limit
         works = conn.execute(
             """SELECT w.id, w.title, w.description, w.image_path, w.thumbnail_path,
                       w.source_type, w.visibility, w.merch_candidate, w.evidence_candidate,
                       w.ai_score_originality, w.ai_feedback, w.created_at
                FROM works w
                WHERE w.child_id = ?
-               ORDER BY w.created_at DESC""",
-            (child_id,),
+               ORDER BY w.created_at DESC
+               LIMIT ? OFFSET ?""",
+            (child_id, limit, offset),
         ).fetchall()
 
     return {
@@ -123,7 +133,9 @@ async def get_child_works(
             }
             for w in works
         ],
-        "total": len(works),
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit,
     }
 
 

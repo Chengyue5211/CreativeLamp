@@ -3,6 +3,8 @@
 儿童原创视觉表达成长平台
 """
 import os
+import time
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -13,20 +15,25 @@ from fastapi.responses import HTMLResponse
 from core.config import BASE_DIR, ENV, IS_PROD
 from core.database import init_database
 
+# 日志配置
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger("huichuang")
+
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
-    # 启动时
-    print("=" * 50)
-    print("  绘创前程 — 儿童原创视觉表达成长平台")
-    print(f"  环境: {ENV}")
-    print("=" * 50)
+    logger.info("=" * 50)
+    logger.info("  绘创前程 — 儿童原创视觉表达成长平台")
+    logger.info(f"  环境: {ENV}")
+    logger.info("=" * 50)
     init_database()
-    print("  数据库初始化完成")
+    logger.info("  数据库初始化完成")
     yield
-    # 关闭时
-    print("  绘创前程服务已停止")
+    logger.info("  绘创前程服务已停止")
 
 
 app = FastAPI(
@@ -46,6 +53,40 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ============================================================
+# 安全头 + 请求日志中间件
+# ============================================================
+@app.middleware("http")
+async def security_and_logging_middleware(request: Request, call_next):
+    start = time.time()
+    response = await call_next(request)
+    duration = round((time.time() - start) * 1000, 1)
+
+    # 请求日志
+    logger.info(
+        f"{request.method} {request.url.path} {response.status_code} {duration}ms"
+    )
+
+    # 安全响应头
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if IS_PROD:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self' 'unsafe-inline'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; "
+            "font-src 'self'; "
+            "connect-src 'self'"
+        )
+
+    return response
+
 
 # 静态文件
 frontend_dir = BASE_DIR / "frontend"
@@ -76,14 +117,15 @@ async def index():
 async def contour_image(filename: str):
     """提供轮廓图形的PNG图片"""
     from fastapi.responses import FileResponse
-    # 安全检查
-    if "/" in filename or "\\" in filename or ".." in filename:
-        from fastapi import HTTPException
+    from fastapi import HTTPException
+    # 安全检查：resolve后验证仍在目标目录
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="非法文件名")
     contour_dir = BASE_DIR / "data" / "contours"
-    filepath = contour_dir / filename
+    filepath = (contour_dir / filename).resolve()
+    if not str(filepath).startswith(str(contour_dir.resolve())):
+        raise HTTPException(status_code=400, detail="非法文件路径")
     if not filepath.exists():
-        from fastapi import HTTPException
         raise HTTPException(status_code=404, detail="图形不存在")
     return FileResponse(str(filepath), media_type="image/png")
 

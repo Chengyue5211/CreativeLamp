@@ -311,9 +311,9 @@ def get_task_detail(task_id: int, child_id: int) -> dict:
 
 def update_task_status(task_id: int, child_id: int, status: str) -> dict:
     """更新任务状态"""
-    valid_statuses = ("in_progress", "submitted", "evaluated")
-    if status not in valid_statuses:
-        raise ValueError(f"无效状态，可选: {valid_statuses}")
+    ALLOWED_STATUSES = {"in_progress", "submitted", "evaluated"}
+    if status not in ALLOWED_STATUSES:
+        raise ValueError(f"无效状态，可选: {ALLOWED_STATUSES}")
 
     with get_db() as conn:
         task = conn.execute(
@@ -323,15 +323,22 @@ def update_task_status(task_id: int, child_id: int, status: str) -> dict:
         if not task:
             raise ValueError("任务不存在")
 
-        update_fields = {"status": status}
+        # 使用固定SQL而非动态字段拼接
         if status == "submitted":
-            update_fields["submitted_at"] = datetime.now().isoformat()
+            conn.execute(
+                "UPDATE tasks SET status = ?, submitted_at = datetime('now') WHERE id = ?",
+                (status, task_id),
+            )
         elif status == "evaluated":
-            update_fields["evaluated_at"] = datetime.now().isoformat()
-
-        set_clause = ", ".join(f"{k} = ?" for k in update_fields)
-        values = list(update_fields.values()) + [task_id]
-        conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", values)
+            conn.execute(
+                "UPDATE tasks SET status = ?, evaluated_at = datetime('now') WHERE id = ?",
+                (status, task_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE tasks SET status = ? WHERE id = ?",
+                (status, task_id),
+            )
 
     return {"task_id": task_id, "status": status}
 

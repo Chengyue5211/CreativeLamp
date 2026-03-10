@@ -16,6 +16,8 @@ from core.database import get_db
 from core.security import get_current_user
 from core.config import UPLOAD_DIR, THUMBNAIL_DIR, ALLOWED_IMAGE_TYPES, MAX_UPLOAD_SIZE_MB
 
+ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".webp"}
+
 router = APIRouter()
 
 
@@ -31,7 +33,7 @@ async def upload_work(
     """上传作品（拍照）"""
     child_id = current_user["user_id"]
 
-    # 验证文件类型
+    # 验证MIME类型
     if image.content_type not in ALLOWED_IMAGE_TYPES:
         raise HTTPException(status_code=400, detail="只支持 JPG/PNG/WebP 图片格式")
 
@@ -40,8 +42,23 @@ async def upload_work(
     if len(content) > MAX_UPLOAD_SIZE_MB * 1024 * 1024:
         raise HTTPException(status_code=400, detail=f"图片大小不能超过 {MAX_UPLOAD_SIZE_MB}MB")
 
-    # 生成唯一文件名
-    ext = os.path.splitext(image.filename or "photo.jpg")[1] or ".jpg"
+    # Pillow验证实际图片格式（防止MIME伪造）
+    from PIL import Image
+    import io
+    try:
+        img = Image.open(io.BytesIO(content))
+        img.verify()
+        actual_format = img.format
+        if actual_format not in ("JPEG", "PNG", "WEBP"):
+            raise HTTPException(status_code=400, detail="图片格式不合法")
+    except HTTPException:
+        raise
+    except Exception:
+        raise HTTPException(status_code=400, detail="无法识别的图片文件")
+
+    # 安全扩展名（白名单，不信任客户端文件名）
+    format_to_ext = {"JPEG": ".jpg", "PNG": ".png", "WEBP": ".webp"}
+    ext = format_to_ext.get(actual_format, ".jpg")
     filename = f"{child_id}_{uuid.uuid4().hex[:12]}{ext}"
     filepath = UPLOAD_DIR / filename
 
@@ -148,15 +165,15 @@ async def list_my_works(
 async def get_work_image(filename: str):
     """获取作品图片"""
     from fastapi.responses import FileResponse
-
-    # 安全检查：防止路径遍历
-    if "/" in filename or "\\" in filename or ".." in filename:
+    # 安全检查：只允许合法文件名
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
         raise HTTPException(status_code=400, detail="非法文件名")
-
-    filepath = UPLOAD_DIR / filename
+    filepath = (UPLOAD_DIR / filename).resolve()
+    # 确保解析后的路径仍在上传目录内
+    if not str(filepath).startswith(str(UPLOAD_DIR.resolve())):
+        raise HTTPException(status_code=400, detail="非法文件路径")
     if not filepath.exists():
         raise HTTPException(status_code=404, detail="图片不存在")
-
     return FileResponse(str(filepath))
 
 
@@ -171,7 +188,6 @@ async def get_work_detail(
 
     with get_db() as conn:
         if role == "parent":
-            # 家长可以查看自己孩子的作品
             work = conn.execute(
                 """SELECT w.*, wm.prototype_tags_json, wm.transform_tags_json,
                           wm.increase_types_json, wm.series_name, wm.module
@@ -191,16 +207,14 @@ async def get_work_detail(
                 (work_id, user_id),
             ).fetchone()
 
-    if not work:
-        raise HTTPException(status_code=404, detail="作品不存在")
+        if not work:
+            raise HTTPException(status_code=404, detail="作品不存在")
 
-    # 获取关联任务信息
-    task_info = None
-    if work["task_id"]:
-        with get_db() as conn2:
-            task = conn2.execute(
-                """SELECT t.id, t.status, tt.title, tt.module, tt.task_type,
-                          tt.instruction, tt.requirement_json
+        # 获取关联任务信息（同一连接）
+        task_info = None
+        if work["task_id"]:
+            task = conn.execute(
+                """SELECT t.id, t.status, tt.title, tt.module, tt.task_type, tt.description
                    FROM tasks t
                    JOIN task_templates tt ON t.template_id = tt.id
                    WHERE t.id = ?""",
@@ -212,7 +226,7 @@ async def get_work_detail(
                     "title": task["title"],
                     "module": task["module"],
                     "task_type": task["task_type"],
-                    "instruction": task["instruction"],
+                    "description": task["description"],
                     "status": task["status"],
                 }
 

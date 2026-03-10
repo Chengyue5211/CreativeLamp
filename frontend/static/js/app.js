@@ -210,7 +210,7 @@ async function renderParentHome(container) {
                                     ${dc.latest_work.thumbnail_path ? `<img src="${escapeHtml(dc.latest_work.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` : ''}
                                 </div>
                                 <div style="flex:1; font-size:0.8rem; color:var(--gray-600);">最新: ${escapeHtml(dc.latest_work.title || '无题')}</div>
-                                <button onclick="event.stopPropagation(); navigate('parent-child-works', {childId:${child.id}, childName:'${escapeHtml(child.nickname)}'})" style="font-size:0.75rem; color:var(--primary-500); background:none; border:1px solid var(--primary-300); padding:3px 10px; border-radius:8px; cursor:pointer;">
+                                <button onclick="event.stopPropagation(); navigate('parent-child-works', {childId:${child.id}, childName:'${escapeJsString(child.nickname)}'})" style="font-size:0.75rem; color:var(--primary-500); background:none; border:1px solid var(--primary-300); padding:3px 10px; border-radius:8px; cursor:pointer;">
                                     查看全部
                                 </button>
                             </div>
@@ -883,7 +883,7 @@ async function renderPrintPreview(container, params) {
                 🖨️ 下载打印
             </button>
 
-            <button class="btn btn-outline btn-large" onclick="navigate('upload-work', {contourId:'${contourId}', contourName:'${escapeHtml(item.name)}'})" style="margin-top:8px;">
+            <button class="btn btn-outline btn-large" onclick="navigate('upload-work', {contourId:'${escapeJsString(contourId)}', contourName:'${escapeJsString(item.name)}'})" style="margin-top:8px;">
                 📷 画好了？上传作品
             </button>
         </div>
@@ -1293,7 +1293,7 @@ async function renderParentChildWorks(container, params) {
                 ${works.length > 0 ? `
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         ${works.map(w => `
-                            <div class="card" style="padding:0; overflow:hidden; cursor:pointer;" onclick="navigate('parent-work-detail', {workId:${w.id}, childId:${childId}, childName:'${escapeHtml(childName)}'})">
+                            <div class="card" style="padding:0; overflow:hidden; cursor:pointer;" onclick="navigate('parent-work-detail', {workId:${w.id}, childId:${childId}, childName:'${escapeJsString(childName)}'})">
                                 <div style="height:130px; background:#F5F5F5; display:flex; align-items:center; justify-content:center;">
                                     ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` : `<div style="font-size:2.5rem;">🎨</div>`}
                                 </div>
@@ -1348,7 +1348,7 @@ async function renderParentWorkDetail(container, params) {
                 <h1>${escapeHtml(work.title || '无题')}</h1>
                 <div class="header-subtitle">${escapeHtml(childName)}的作品</div>
                 <div class="header-actions">
-                    <button onclick="navigate('parent-child-works', {childId:${childId}, childName:'${escapeHtml(childName)}'})" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
+                    <button onclick="navigate('parent-child-works', {childId:${childId}, childName:'${escapeJsString(childName)}'})" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
                 </div>
             </div>
             <div class="page">
@@ -1396,7 +1396,7 @@ async function renderParentWorkDetail(container, params) {
                             <label class="form-label">💬 写一句鼓励的话</label>
                             <textarea id="p-eval-feedback" class="form-input" rows="2" placeholder="宝贝画得真棒！" style="resize:none;"></textarea>
                         </div>
-                        <button class="btn btn-primary btn-large" onclick="doParentEvaluateWork(${work.id}, ${childId}, '${escapeHtml(childName)}')">
+                        <button class="btn btn-primary btn-large" onclick="doParentEvaluateWork(${work.id}, ${childId}, '${escapeJsString(childName)}')">
                             提交评价
                         </button>
                     </div>
@@ -1575,8 +1575,8 @@ async function doRegister() {
         const resp = await API.register({ phone, password, nickname });
         APP.token = resp.token;
         APP.user = resp;
-        localStorage.setItem("hc_token", resp.token);
-        localStorage.setItem("hc_user", JSON.stringify(resp));
+        sessionStorage.setItem("hc_token", resp.token);
+        sessionStorage.setItem("hc_user", JSON.stringify(resp));
         showToast("注册成功！", "success");
         navigate("parent-home");
     } catch (e) {
@@ -1594,8 +1594,8 @@ async function doLogin() {
         const resp = await API.login({ phone, password });
         APP.token = resp.token;
         APP.user = resp;
-        localStorage.setItem("hc_token", resp.token);
-        localStorage.setItem("hc_user", JSON.stringify(resp));
+        sessionStorage.setItem("hc_token", resp.token);
+        sessionStorage.setItem("hc_user", JSON.stringify(resp));
         showToast("登录成功！", "success");
         navigate("parent-home");
     } catch (e) {
@@ -1603,14 +1603,23 @@ async function doLogin() {
     }
 }
 
-function doLogout() {
-    APP.token = null;
-    APP.user = null;
-    APP.childToken = null;
-    APP.currentChild = null;
-    localStorage.removeItem("hc_token");
-    localStorage.removeItem("hc_user");
-    navigate("login");
+async function doLogout() {
+    try {
+        if (APP.token) {
+            await fetch("/api/auth/logout", {
+                method: "POST",
+                headers: { "Authorization": "Bearer " + APP.token },
+            }).catch(() => {});
+        }
+    } finally {
+        APP.token = null;
+        APP.user = null;
+        APP.childToken = null;
+        APP.currentChild = null;
+        sessionStorage.removeItem("hc_token");
+        sessionStorage.removeItem("hc_user");
+        navigate("login");
+    }
 }
 
 async function doAddChild() {
@@ -1776,12 +1785,22 @@ async function doUploadWork() {
     if (!fileInput?.files?.length) {
         return showToast("请先拍照或选择一张照片", "error");
     }
+    const file = fileInput.files[0];
+    // 文件类型检查
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/webp'];
+    if (!allowedTypes.includes(file.type)) {
+        return showToast("只支持 JPG/PNG/WebP 图片格式", "error");
+    }
+    // 文件大小检查 (10MB)
+    if (file.size > 10 * 1024 * 1024) {
+        return showToast("图片大小不能超过10MB", "error");
+    }
     if (!title) {
         return showToast("请给作品起个名字", "error");
     }
 
     const formData = new FormData();
-    formData.append("image", fileInput.files[0]);
+    formData.append("image", file);
     formData.append("title", title);
     formData.append("description", document.getElementById("work-desc")?.value || "");
 
@@ -1830,6 +1849,11 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
+function escapeJsString(str) {
+    if (!str) return "";
+    return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/"/g, '\\"').replace(/\n/g, '\\n').replace(/\r/g, '\\r');
+}
+
 function levelName(grade) {
     const map = {
         prep: "准备级", beginner_upper: "初级上", beginner_lower: "初级下",
@@ -1857,8 +1881,8 @@ function showToast(msg, type = "info") {
 // ============================================================
 document.addEventListener("DOMContentLoaded", () => {
     // 恢复登录状态
-    const savedToken = localStorage.getItem("hc_token");
-    const savedUser = localStorage.getItem("hc_user");
+    const savedToken = sessionStorage.getItem("hc_token");
+    const savedUser = sessionStorage.getItem("hc_user");
 
     if (savedToken && savedUser) {
         APP.token = savedToken;
