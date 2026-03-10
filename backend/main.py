@@ -72,6 +72,22 @@ async def index():
     return html_path.read_text(encoding="utf-8")
 
 
+@app.get("/api/contours/image/{filename}")
+async def contour_image(filename: str):
+    """提供轮廓图形的PNG图片"""
+    from fastapi.responses import FileResponse
+    # 安全检查
+    if "/" in filename or "\\" in filename or ".." in filename:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=400, detail="非法文件名")
+    contour_dir = BASE_DIR / "data" / "contours"
+    filepath = contour_dir / filename
+    if not filepath.exists():
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="图形不存在")
+    return FileResponse(str(filepath), media_type="image/png")
+
+
 @app.get("/sw.js")
 async def service_worker():
     """Service Worker — 必须从根路径提供以获取正确的scope"""

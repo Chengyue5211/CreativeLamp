@@ -508,7 +508,7 @@ async function renderTaskDetail(container, params) {
                     <div class="card" style="background:linear-gradient(135deg, #FFF8F0, #FFF4EB); border-color:#E8C090; text-align:center;">
                         <div class="card-title">📋 推荐的图形底稿</div>
                         <div style="background:#fff; border-radius:12px; padding:12px; margin:8px 0;">
-                            ${typeof ContourSVG !== 'undefined' ? ContourSVG.generate(task.requirement.recommended_contour.id) : ''}
+                            <img src="/api/contours/image/${encodeURIComponent(task.requirement.recommended_contour.image || task.requirement.recommended_contour.id + '.png')}" style="max-width:200px; max-height:200px; object-fit:contain;" loading="lazy">
                         </div>
                         <div style="font-weight:700; font-size:1rem; margin:4px 0;">${escapeHtml(task.requirement.recommended_contour.name)}</div>
                         <button class="btn btn-primary" onclick="navigate('print-preview', {contourId:'${task.requirement.recommended_contour.id}'})" style="margin-top:8px;">
@@ -710,25 +710,40 @@ async function renderTransformLibrary(container) {
 }
 
 // ============================================================
-// 轮廓图形库页面 — 动物、植物、生活用品等
+// 轮廓图形库页面 — 真实原创线描图形（PNG）
 // ============================================================
 async function renderContourLibrary(container) {
-    if (typeof ContourSVG === 'undefined') {
+    // 从API获取图形数据
+    let allContours = [];
+    try {
+        const resp = await API.request("GET", "/training/contours", null, true);
+        allContours = resp.contours || [];
+    } catch (e) {
         container.innerHTML = '<div class="page"><p>图形库加载失败，请刷新页面</p></div>';
         return;
     }
 
-    const categories = ContourSVG.categories;
+    const categoryMeta = {
+        animals:  { icon: "🐾", name: "动物", color: "#FFF4EB" },
+        plants:   { icon: "🌿", name: "植物果实", color: "#E8F5F1" },
+        objects:  { icon: "🏠", name: "生活用品", color: "#F0F7FF" },
+        clothing: { icon: "👗", name: "服饰", color: "#E8D4F5" },
+        vehicles: { icon: "🚀", name: "交通工具", color: "#FFF0F0" },
+        fantasy:  { icon: "🐉", name: "奇幻", color: "#FFE8CC" },
+    };
+
+    // 获取所有出现的分类
+    const catOrder = ["animals", "plants", "objects", "clothing", "vehicles", "fantasy"];
     let activeCategory = "animals";
 
     function render() {
-        const items = ContourSVG.getByCategory(activeCategory);
-        const catInfo = categories[activeCategory];
+        const items = allContours.filter(c => c.category === activeCategory);
+        const catInfo = categoryMeta[activeCategory] || { icon: "📦", name: activeCategory, color: "#F5F5F5" };
 
         container.innerHTML = `
             <div class="header" style="background:linear-gradient(135deg, #D98B5F, #E8A87C);">
                 <h1>图形库</h1>
-                <div class="header-subtitle">选一个图形，下载打印，画出你的创意！</div>
+                <div class="header-subtitle">${allContours.length}个原创线描图形，选一个打印出来画画吧！</div>
                 <div class="header-actions">
                     <button onclick="navigate('child-home')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
                 </div>
@@ -736,25 +751,30 @@ async function renderContourLibrary(container) {
             <div class="page">
                 <!-- 分类标签 -->
                 <div style="display:flex; gap:6px; overflow-x:auto; padding:4px 0 12px; -webkit-overflow-scrolling:touch;">
-                    ${Object.entries(categories).map(([catId, cat]) => `
+                    ${catOrder.filter(cid => allContours.some(c => c.category === cid)).map(catId => {
+                        const cat = categoryMeta[catId] || {};
+                        const count = allContours.filter(c => c.category === catId).length;
+                        return `
                         <button onclick="switchContourCategory('${catId}')"
-                            style="flex-shrink:0; padding:8px 14px; border-radius:20px; border:2px solid ${activeCategory === catId ? cat.color.replace('#E', '#8').replace('#F', '#C') : '#E0E0E0'};
-                            background:${activeCategory === catId ? cat.color : '#fff'}; font-size:0.85rem; cursor:pointer; font-weight:${activeCategory === catId ? '700' : '400'};">
-                            ${cat.icon} ${cat.name}
-                        </button>
-                    `).join("")}
+                            style="flex-shrink:0; padding:8px 14px; border-radius:20px; border:2px solid ${activeCategory === catId ? '#D98B5F' : '#E0E0E0'};
+                            background:${activeCategory === catId ? cat.color : '#fff'}; font-size:0.82rem; cursor:pointer; font-weight:${activeCategory === catId ? '700' : '400'}; white-space:nowrap;">
+                            ${cat.icon} ${cat.name}<span style="font-size:0.7rem; color:var(--gray-400); margin-left:2px;">${count}</span>
+                        </button>`;
+                    }).join("")}
                 </div>
 
                 <!-- 图形网格 -->
                 <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
                     ${items.map(item => `
-                        <div class="card" style="text-align:center; padding:12px; cursor:pointer; transition:all 0.2s;"
+                        <div class="card" style="text-align:center; padding:8px; cursor:pointer; transition:all 0.2s;"
                              onclick="navigate('print-preview', {contourId:'${item.id}'})">
-                            <div style="background:${catInfo.color}; border-radius:12px; padding:10px; margin-bottom:8px;">
-                                ${ContourSVG.generate(item.id)}
+                            <div style="background:${catInfo.color}; border-radius:12px; padding:6px; margin-bottom:8px; min-height:120px; display:flex; align-items:center; justify-content:center;">
+                                ${item.image_url
+                                    ? `<img src="${escapeHtml(item.image_url)}" style="max-width:100%; max-height:140px; object-fit:contain;" loading="lazy">`
+                                    : (typeof ContourSVG !== 'undefined' ? ContourSVG.generate(item.id) : `<div style="font-size:2rem;">🎨</div>`)}
                             </div>
                             <div style="font-weight:700; font-size:0.95rem;">${escapeHtml(item.name)}</div>
-                            <div style="font-size:0.72rem; color:var(--gray-500); margin-top:2px;">${escapeHtml(item.description)}</div>
+                            <div style="font-size:0.72rem; color:var(--gray-500); margin-top:2px;">${escapeHtml(item.description || '')}</div>
                             <div style="margin-top:6px;">
                                 <span style="font-size:0.7rem; background:var(--primary-50); color:var(--primary-600); padding:2px 8px; border-radius:10px;">
                                     ${'⭐'.repeat(item.difficulty)}
@@ -771,10 +791,16 @@ async function renderContourLibrary(container) {
                     </div>
                 ` : ''}
             </div>
+
+            <div class="tab-bar">
+                <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item active"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item" onclick="navigate('growth')"><span class="tab-icon">📊</span>成长</button>
+            </div>
         `;
     }
 
-    // 分类切换函数
     window.switchContourCategory = function(cat) {
         activeCategory = cat;
         render();
@@ -786,19 +812,32 @@ async function renderContourLibrary(container) {
 // ============================================================
 // 打印预览页面 — 下载打印底稿
 // ============================================================
-function renderPrintPreview(container, params) {
+async function renderPrintPreview(container, params) {
     const contourId = params?.contourId;
-    if (!contourId || typeof ContourSVG === 'undefined') {
+    if (!contourId) {
         navigate('contours');
         return;
     }
 
-    const item = ContourSVG.library[contourId];
+    // 从API获取轮廓数据
+    let item = null;
+    try {
+        const data = await API.request('/training/contours');
+        const contours = data.contours || [];
+        item = contours.find(c => c.id === contourId);
+    } catch (e) {
+        // fallback to ContourSVG if available
+        if (typeof ContourSVG !== 'undefined' && ContourSVG.library[contourId]) {
+            item = ContourSVG.library[contourId];
+        }
+    }
+
     if (!item) {
         navigate('contours');
         return;
     }
 
+    const imageUrl = item.image_url || `/api/contours/image/${encodeURIComponent(contourId + '.png')}`;
     const child = APP.currentChild || {};
     const today = new Date().toLocaleDateString('zh-CN');
 
@@ -812,13 +851,13 @@ function renderPrintPreview(container, params) {
         </div>
         <div class="page">
             <div class="card" style="text-align:center; padding:20px;">
-                <p style="font-size:0.85rem; color:var(--gray-600); margin-bottom:12px;">${escapeHtml(item.description)}</p>
+                <p style="font-size:0.85rem; color:var(--gray-600); margin-bottom:12px;">${escapeHtml(item.description || '')}</p>
                 <div id="print-area" style="background:#fff; border:2px solid #E0E0E0; border-radius:8px; padding:20px; max-width:400px; margin:0 auto;">
                     <div style="text-align:center; font-size:0.8rem; color:#999; margin-bottom:10px;">
                         绘创前程 · ${escapeHtml(item.name)} · ${escapeHtml(child.nickname || '')}
                     </div>
                     <div style="display:flex; justify-content:center;">
-                        ${ContourSVG.generatePrint ? ContourSVG.generatePrint(contourId) : ContourSVG.generate(contourId)}
+                        <img src="${escapeHtml(imageUrl)}" style="max-width:100%; max-height:350px; object-fit:contain;" loading="lazy">
                     </div>
                     <div style="margin-top:12px; display:flex; justify-content:space-between; font-size:0.75rem; color:#BBB;">
                         <span>姓名：____________</span>
@@ -844,7 +883,7 @@ function renderPrintPreview(container, params) {
                 🖨️ 下载打印
             </button>
 
-            <button class="btn btn-outline btn-large" onclick="navigate('upload-work', {contourId:'${contourId}'})" style="margin-top:8px;">
+            <button class="btn btn-outline btn-large" onclick="navigate('upload-work', {contourId:'${contourId}', contourName:'${escapeHtml(item.name)}'})" style="margin-top:8px;">
                 📷 画好了？上传作品
             </button>
         </div>
@@ -857,8 +896,7 @@ function renderPrintPreview(container, params) {
 function renderUploadWork(container, params) {
     const contourId = params?.contourId || '';
     const taskId = params?.taskId || 0;
-    const contourName = (contourId && typeof ContourSVG !== 'undefined' && ContourSVG.library[contourId])
-        ? ContourSVG.library[contourId].name : '';
+    const contourName = params?.contourName || '';
 
     container.innerHTML = `
         <div class="header" style="background:linear-gradient(135deg, #4E8D7C, #6BAF9C);">
@@ -1692,7 +1730,7 @@ function doPrintContour(contourId) {
         <style>
             body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; }
             .print-page { max-width: 600px; margin: 20px auto; text-align: center; }
-            svg { max-width: 100%; }
+            svg, img { max-width: 100%; }
             @media print {
                 body { padding: 0; }
                 .print-page { max-width: none; margin: 0; padding: 40px; }

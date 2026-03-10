@@ -46,7 +46,14 @@ async def api_list_contours(
     contours = CONTOUR_LIBRARY
     if category:
         contours = [c for c in contours if c["category"] == category]
-    return {"contours": contours, "total": len(contours)}
+    # 为每个图形添加完整图片URL
+    result = []
+    for c in contours:
+        item = {**c}
+        if c.get("image"):
+            item["image_url"] = f"/api/contours/image/{c['image']}"
+        result.append(item)
+    return {"contours": result, "total": len(result)}
 
 
 @router.get("/levels")
