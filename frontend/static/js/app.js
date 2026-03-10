@@ -80,6 +80,7 @@ function navigate(page, params = {}) {
         case "gallery": renderGallery(container, params); break;
         case "print-preview": renderPrintPreview(container, params); break;
         case "upload-work": renderUploadWork(container, params); break;
+        case "growth": renderGrowth(container, params); break;
         default: renderLogin(container);
     }
 }
@@ -276,7 +277,7 @@ async function renderChildHome(container) {
                 <button class="tab-item active"><span class="tab-icon">🏠</span>首页</button>
                 <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
                 <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
-                <button class="tab-item"><span class="tab-icon">📊</span>成长</button>
+                <button class="tab-item" onclick="navigate('growth')"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
     } catch (e) {
@@ -824,7 +825,117 @@ async function renderGallery(container) {
                 <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
                 <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
                 <button class="tab-item active"><span class="tab-icon">🖼️</span>展馆</button>
-                <button class="tab-item"><span class="tab-icon">📊</span>成长</button>
+                <button class="tab-item" onclick="navigate('growth')"><span class="tab-icon">📊</span>成长</button>
+            </div>
+        `;
+    } catch (e) {
+        showToast(e.message, "error");
+    }
+}
+
+// ============================================================
+// 成长档案页面
+// ============================================================
+async function renderGrowth(container) {
+    try {
+        let data = null;
+        try {
+            data = await API.request("GET", "/showcase/growth", null, true);
+        } catch (e) {
+            // API可能返回错误
+        }
+
+        const child = APP.currentChild || {};
+        const stats = data?.stats || {};
+        const recentWorks = data?.recent_works || [];
+
+        container.innerHTML = `
+            <div class="header" style="background:linear-gradient(135deg, #6BAF9C, #4E8D7C);">
+                <h1>${escapeHtml(child.nickname || '')}的成长档案</h1>
+                <div class="header-subtitle">${levelName(child.level_grade)} · ${child.age || ''}岁</div>
+                <div class="header-actions">
+                    <button onclick="navigate('child-home')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
+                </div>
+            </div>
+            <div class="page">
+                <!-- 成长数据卡片 -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-bottom:16px;">
+                    <div class="card" style="text-align:center; background:var(--primary-50);">
+                        <div style="font-size:2rem; font-weight:800; color:var(--primary-600);">${stats.total_works || 0}</div>
+                        <div style="font-size:0.8rem; color:var(--gray-500);">件作品</div>
+                    </div>
+                    <div class="card" style="text-align:center; background:var(--accent-50);">
+                        <div style="font-size:2rem; font-weight:800; color:var(--accent-600);">${stats.completed_tasks || 0}</div>
+                        <div style="font-size:0.8rem; color:var(--gray-500);">已完成任务</div>
+                    </div>
+                    <div class="card" style="text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:700; color:#4E8D7C;">${stats.module_a_tasks || 0}</div>
+                        <div style="font-size:0.75rem; color:var(--gray-500);">模块A · 原型组合</div>
+                    </div>
+                    <div class="card" style="text-align:center;">
+                        <div style="font-size:1.5rem; font-weight:700; color:#D98B5F;">${stats.module_b_tasks || 0}</div>
+                        <div style="font-size:0.75rem; color:var(--gray-500);">模块B · 图形变形</div>
+                    </div>
+                </div>
+
+                <!-- 等级进度 -->
+                <div class="card" style="margin-bottom:16px;">
+                    <div class="card-title">训练等级</div>
+                    <div style="display:flex; align-items:center; gap:10px; margin-top:8px;">
+                        <div style="font-size:2rem;">🏅</div>
+                        <div>
+                            <div style="font-weight:700; font-size:1.1rem; color:var(--primary-600);">${levelName(child.level_grade)}</div>
+                            <div style="font-size:0.8rem; color:var(--gray-500);">${child.age || ''}岁 · 继续努力，向下一级进发！</div>
+                        </div>
+                    </div>
+                    <div style="margin-top:10px; background:var(--gray-100); border-radius:10px; height:8px; overflow:hidden;">
+                        <div style="background:linear-gradient(90deg, var(--primary-400), var(--accent-400)); height:100%; width:${Math.min(100, (stats.completed_tasks || 0) * 10)}%; border-radius:10px; transition:width 0.5s;"></div>
+                    </div>
+                </div>
+
+                <!-- 最近作品 -->
+                ${recentWorks.length > 0 ? `
+                    <div class="section-title">最近的作品</div>
+                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
+                        ${recentWorks.map(w => `
+                            <div style="background:#F5F5F5; border-radius:10px; overflow:hidden; aspect-ratio:1;">
+                                ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` :
+                                  `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:2rem;">🎨</div>`}
+                            </div>
+                        `).join("")}
+                    </div>
+                ` : ''}
+
+                <!-- 创作引导 -->
+                ${(stats.total_works || 0) === 0 ? `
+                    <div class="card" style="text-align:center; background:linear-gradient(135deg, #FFF8F0, #FFF4EB); padding:24px;">
+                        <div style="font-size:3rem; margin-bottom:12px;">🌟</div>
+                        <h3 style="color:#8B5A2B;">开始你的创作之旅</h3>
+                        <p style="font-size:0.85rem; color:#B88B60; margin:8px 0 16px;">
+                            每一件作品都是成长的足迹<br>
+                            从图形库选一个图形开始吧！
+                        </p>
+                        <button class="btn btn-primary" onclick="navigate('contours')">
+                            去图形库
+                        </button>
+                    </div>
+                ` : `
+                    <div class="card" style="text-align:center;">
+                        <p style="font-size:0.85rem; color:var(--gray-500);">
+                            每一件作品都是成长的足迹。继续创作，让展馆越来越丰富！
+                        </p>
+                        <button class="btn btn-outline" onclick="navigate('gallery')" style="margin-top:8px; font-size:0.85rem;">
+                            查看全部作品
+                        </button>
+                    </div>
+                `}
+            </div>
+
+            <div class="tab-bar">
+                <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item active"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
     } catch (e) {
