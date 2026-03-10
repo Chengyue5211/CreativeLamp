@@ -266,30 +266,75 @@ async function renderChildHome(container) {
         const tasks = todayResp.tasks || [];
         const child = APP.currentChild;
 
+        // 并行获取作品数和成长数据
+        let worksCount = 0;
+        let growthData = null;
+        try {
+            const [worksResp, growthResp] = await Promise.all([
+                API.request("GET", "/works/my", null, true),
+                API.request("GET", "/showcase/growth", null, true),
+            ]);
+            worksCount = worksResp.total || 0;
+            growthData = growthResp;
+        } catch (e) { /* ignore */ }
+
+        const completedToday = tasks.filter(t => t.status === "submitted" || t.status === "evaluated").length;
+        const totalToday = tasks.length;
+        const radar = growthData?.ability_radar;
+
         container.innerHTML = `
             <div class="header">
                 <h1>${escapeHtml(child.nickname)}的创作空间</h1>
-                <div class="header-subtitle">${levelName(child.level_grade)}</div>
+                <div class="header-subtitle">${levelName(child.level_grade)} · ${child.age}岁</div>
                 <div class="header-actions">
                     <button onclick="backToParent()" style="background:none; border:none; color:#fff; font-size:0.85rem; cursor:pointer;">切换</button>
                 </div>
             </div>
             <div class="page">
-                <div class="welcome-section" style="padding:20px 0;">
-                    <div class="welcome-avatar">${child.gender === 'female' ? '👧' : '👦'}</div>
-                    <div class="welcome-name">${escapeHtml(child.nickname)}</div>
-                    <div class="welcome-level">${levelName(child.level_grade)} · ${child.age}岁</div>
+                <!-- 快速统计栏 -->
+                <div style="display:flex; gap:8px; margin-bottom:16px;">
+                    <div style="flex:1; text-align:center; background:var(--primary-50); border-radius:12px; padding:10px 4px;">
+                        <div style="font-size:1.5rem; font-weight:800; color:var(--primary-600);">${worksCount}</div>
+                        <div style="font-size:0.7rem; color:var(--gray-500);">作品</div>
+                    </div>
+                    <div style="flex:1; text-align:center; background:var(--accent-50); border-radius:12px; padding:10px 4px;">
+                        <div style="font-size:1.5rem; font-weight:800; color:var(--accent-600);">${growthData?.stats?.completed_tasks || 0}</div>
+                        <div style="font-size:0.7rem; color:var(--gray-500);">完成</div>
+                    </div>
+                    <div style="flex:1; text-align:center; background:#FFF4EB; border-radius:12px; padding:10px 4px;">
+                        <div style="font-size:1.5rem; font-weight:800; color:#D98B5F;">${levelName(child.level_grade)}</div>
+                        <div style="font-size:0.7rem; color:var(--gray-500);">等级</div>
+                    </div>
                 </div>
 
-                <div class="section-title">今日训练</div>
+                <!-- 今日训练 -->
+                <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
+                    <span>今日训练</span>
+                    ${totalToday > 0 ? `<span style="font-size:0.75rem; color:var(--primary-500);">${completedToday}/${totalToday} 完成</span>` : ''}
+                </div>
                 ${tasks.length > 0 ? tasks.map(t => renderTaskCard(t)).join("") : `
                     <div class="card" style="text-align:center; padding:30px;">
+                        <div style="font-size:2.5rem; margin-bottom:12px;">🎯</div>
                         <p style="color:var(--gray-500); margin-bottom:16px;">今天还没有训练任务</p>
                         <button class="btn btn-primary" onclick="doGenerateTask()">开始今天的训练</button>
                     </div>
                 `}
 
-                <div style="margin-top:24px;">
+                <!-- 快速创作入口 -->
+                <div style="margin-top:20px;">
+                    <div class="section-title">快速创作</div>
+                    <div class="card" style="display:flex; align-items:center; gap:12px; cursor:pointer; border-color:var(--primary-300); border-width:2px;" onclick="navigate('upload-work')">
+                        <div style="font-size:2rem;">📷</div>
+                        <div style="flex:1;">
+                            <div style="font-weight:700; font-size:0.95rem;">直接上传作品</div>
+                            <div style="font-size:0.78rem; color:var(--gray-500);">拍照上传你随时画的作品</div>
+                        </div>
+                        <div style="color:var(--gray-300); font-size:1.2rem;">›</div>
+                    </div>
+                </div>
+
+                <!-- 探索区域 -->
+                <div style="margin-top:20px;">
                     <div class="section-title">探索</div>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         <div class="card" onclick="navigate('contours')" style="text-align:center; cursor:pointer; border-color:#D98B5F; border-width:2px;">
@@ -310,10 +355,33 @@ async function renderChildHome(container) {
                         <div class="card" onclick="navigate('gallery')" style="text-align:center; cursor:pointer; border-color:#4E8D7C; border-width:2px;">
                             <div style="font-size:2rem; margin-bottom:8px;">🖼️</div>
                             <div style="font-weight:600; font-size:0.9rem;">我的展馆</div>
-                            <div style="font-size:0.75rem; color:var(--gray-500);">我的作品集</div>
+                            <div style="font-size:0.75rem; color:var(--gray-500);">${worksCount}件作品</div>
                         </div>
                     </div>
                 </div>
+
+                ${radar ? `
+                    <!-- 能力概览 -->
+                    <div style="margin-top:20px;">
+                        <div class="section-title">创造力概览</div>
+                        <div class="card" onclick="navigate('growth')" style="cursor:pointer;">
+                            <div style="display:flex; justify-content:space-around;">
+                                ${[
+                                    {key:'originality', name:'原创', icon:'💡', color:'#D98B5F'},
+                                    {key:'detail', name:'细节', icon:'🔍', color:'#4E8D7C'},
+                                    {key:'composition', name:'构图', icon:'📐', color:'#89B4D4'},
+                                    {key:'expression', name:'表达', icon:'🎨', color:'#9B6DBF'},
+                                ].map(d => `
+                                    <div style="text-align:center;">
+                                        <div style="font-size:0.7rem; color:var(--gray-400);">${d.icon} ${d.name}</div>
+                                        <div style="font-size:1.2rem; font-weight:800; color:${d.color};">${radar[d.key]}</div>
+                                    </div>
+                                `).join('')}
+                            </div>
+                            <div style="text-align:center; margin-top:8px; font-size:0.72rem; color:var(--gray-400);">点击查看完整成长档案 ›</div>
+                        </div>
+                    </div>
+                ` : ''}
             </div>
 
             <div class="tab-bar">
