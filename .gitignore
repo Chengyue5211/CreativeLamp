@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+.env
+data/huichuang.db
+data/uploads/
+data/thumbnails/
+data/merch_previews/
+.venv/
+*.egg-info/
+dist/
+build/
+.coverage
