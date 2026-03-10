@@ -1,429 +1,281 @@
 """
-绘创前程 — 变形方法数据库
-基于创始人原创理论：7大母类 × 30种变形方法
-"任意对象 × N种变形方法 = 无限创造"
+绘创前程 — 模块B：图形变形与结构生成动作
+基于创始人原创理论 PRD 定义
+
+核心逻辑：基础形 → 变形动作 → 结构生成 → 个体化增加 → 新对象形成
+
+7种变形与结构生成动作（非思维创造力变形，是绘画图形变形）：
+1. 拉长 — 改变比例关系
+2. 切分 — 形成内部结构变化
+3. 叠加 — 形成层次与新关系
+4. 拼接 — 连接形成新整体
+5. 缺口与添加 — 挖去或补上部分改变结构
+6. 延展 — "往外长"，向外生长扩展
+7. 增加 — "往里添"，自由增加新元素（5种子类型）
 """
 
-TRANSFORM_CATEGORIES = [
-    {"id": "scale_form",    "name_zh": "尺度与形态", "name_en": "Scale & Form",     "color": "#FF6B6B"},
-    {"id": "structure",     "name_zh": "结构变形",   "name_en": "Structure",         "color": "#4ECDC4"},
-    {"id": "spatial",       "name_zh": "空间变形",   "name_en": "Spatial",           "color": "#45B7D1"},
-    {"id": "state",         "name_zh": "状态变形",   "name_en": "State",             "color": "#96CEB4"},
-    {"id": "relation",      "name_zh": "关系变形",   "name_en": "Relation",          "color": "#FFEAA7"},
-    {"id": "creative",      "name_zh": "创意变形",   "name_en": "Creative",          "color": "#DDA0DD"},
-    {"id": "module_a_combo","name_zh": "组合表达",   "name_en": "Combination",       "color": "#F0A500"},
-]
+# ============================================================
+# 7种变形与结构生成动作
+# ============================================================
 
-TRANSFORM_METHODS = [
-    # === 尺度与形态 (7种) ===
+TRANSFORM_ACTIONS = [
     {
-        "id": "scale_enlarge",
-        "category": "scale_form",
-        "name_zh": "放大",
-        "name_en": "Enlarge",
-        "icon": "🔍",
-        "description": "把对象整体或局部放大，发现新的视觉可能",
-        "question_template": "如果把【对象】放大到巨人那么大，会发生什么变化？",
-        "hints": ["想想放大后能看到什么新细节", "放大可以改变物体的用途", "局部放大和整体放大是不同的"],
-        "scoring_keywords": ["放大", "巨大", "变大", "更大", "特写", "细节"],
-        "min_age": 5,
-    },
-    {
-        "id": "scale_shrink",
-        "category": "scale_form",
-        "name_zh": "缩小",
-        "name_en": "Shrink",
-        "icon": "🔎",
-        "description": "把对象缩小，发现微观世界的趣味",
-        "question_template": "如果【对象】缩小到蚂蚁那么小，它会变成什么？",
-        "hints": ["缩小后它可以放在哪里", "小到可以被忽略的东西往往很有趣", "缩小改变了它和周围事物的关系"],
-        "scoring_keywords": ["缩小", "微小", "迷你", "袖珍", "变小"],
-        "min_age": 5,
-    },
-    {
-        "id": "scale_distort",
-        "category": "scale_form",
-        "name_zh": "扭曲",
-        "name_en": "Distort",
-        "icon": "🌀",
-        "description": "改变对象的原有形态，弯曲、拉伸、扭转",
-        "question_template": "如果【对象】被风吹得扭曲变形了，会变成什么样子？",
-        "hints": ["扭曲可以让直的变弯", "不同方向的扭曲效果不同", "扭曲后可能产生新的美感"],
-        "scoring_keywords": ["扭曲", "变形", "弯曲", "扭转", "拧"],
-        "min_age": 6,
-    },
-    {
-        "id": "scale_fold",
-        "category": "scale_form",
-        "name_zh": "折叠/展开",
-        "name_en": "Fold/Unfold",
-        "icon": "📐",
-        "description": "将对象折叠起来或展开，改变维度",
-        "question_template": "如果把【对象】像纸一样折叠起来，会变成什么？展开后呢？",
-        "hints": ["折叠可以隐藏一部分", "展开可以揭示内部结构", "反复折叠产生层次"],
-        "scoring_keywords": ["折叠", "展开", "折纸", "翻开", "叠"],
-        "min_age": 6,
-    },
-    {
-        "id": "scale_soften",
-        "category": "scale_form",
-        "name_zh": "柔化/硬化",
-        "name_en": "Soften/Harden",
-        "icon": "💎",
-        "description": "改变对象的软硬质感，柔软如棉花或坚硬如钻石",
-        "question_template": "如果【对象】变得像棉花一样柔软，或像钻石一样坚硬，会怎样？",
-        "hints": ["柔软的东西可以被塑造", "坚硬的东西可以保护", "同一物体软硬不同会产生对比"],
-        "scoring_keywords": ["柔软", "坚硬", "软", "硬", "弹性", "刚"],
-        "min_age": 7,
-    },
-    {
-        "id": "scale_stretch",
-        "category": "scale_form",
+        "id": "stretch",
         "name_zh": "拉长",
         "name_en": "Stretch",
-        "icon": "↔️",
-        "description": "改变对象的比例关系，横向或纵向拉伸",
-        "question_template": "如果把【对象】拉得又长又细，或压得又扁又宽，它像什么？",
-        "hints": ["拉长改变了比例", "极端比例会产生幽默感", "不同方向的拉伸效果完全不同"],
-        "scoring_keywords": ["拉长", "拉伸", "细长", "扁平", "压扁"],
-        "min_age": 5,
+        "description": "将原有图形向某一方向拉高、拉宽、拉细、拉扁，使其形成新的比例关系",
+        "instruction": "试试把这个图形往上拉高，或者往旁边拉宽，看看它变成了什么新形状？",
+        "hints": [
+            "往上拉会变得又高又瘦",
+            "往两边拉会变得又矮又胖",
+            "试试只拉图形的一部分",
+        ],
+        "examples": [
+            "圆拉长变成椭圆",
+            "正方形拉高变成长方形",
+            "三角形拉宽变成扁三角",
+        ],
+        "sort_order": 1,
     },
     {
-        "id": "scale_proportion",
-        "category": "scale_form",
-        "name_zh": "比例变化",
-        "name_en": "Proportion Change",
-        "icon": "⚖️",
-        "description": "改变对象各部分的大小比例",
-        "question_template": "如果【对象】的头变得特别大，身体变得特别小，会是什么样？",
-        "hints": ["夸张比例是漫画的核心技法", "改变比例可以强调重点", "不协调的比例反而有趣"],
-        "scoring_keywords": ["比例", "大头", "小身体", "不对称", "夸张"],
-        "min_age": 5,
-    },
-
-    # === 结构变形 (5种) ===
-    {
-        "id": "struct_decompose",
-        "category": "structure",
-        "name_zh": "分解",
-        "name_en": "Decompose",
-        "icon": "🧩",
-        "description": "把一个完整的对象拆分成多个部分",
-        "question_template": "如果把【对象】拆开，里面有什么？每个部分可以独立使用吗？",
-        "hints": ["拆开后每个部分都可能有新用途", "分解让我们看到内部结构", "有些东西拆开比完整更有趣"],
-        "scoring_keywords": ["分解", "拆开", "拆分", "分离", "零件", "部分"],
-        "min_age": 6,
+        "id": "split",
+        "name_zh": "切分",
+        "name_en": "Split",
+        "description": "把一个整体图形分成两个、三个或更多部分，形成内部结构变化",
+        "instruction": "在图形上画几条线，把它切成几块。每一块可以有不同的装饰！",
+        "hints": [
+            "横着切、竖着切、斜着切效果都不同",
+            "切成不等大的块更有趣",
+            "切开的部分可以稍微分开一点",
+        ],
+        "examples": [
+            "圆被十字线切成四瓣",
+            "方形被对角线切成三角",
+            "图形切开后中间留缝隙",
+        ],
+        "sort_order": 2,
     },
     {
-        "id": "struct_recombine",
-        "category": "structure",
-        "name_zh": "重组",
-        "name_en": "Recombine",
-        "icon": "🔄",
-        "description": "把分解后的部分重新组合成新的东西",
-        "question_template": "把【对象】的各个部分打乱重新组合，能变成什么新东西？",
-        "hints": ["不同的组合顺序产生不同结果", "可以混合不同对象的部分", "重组是发明的核心方法"],
-        "scoring_keywords": ["重组", "组合", "拼装", "重新", "混合", "搭配"],
-        "min_age": 6,
+        "id": "overlap",
+        "name_zh": "叠加",
+        "name_en": "Overlap",
+        "description": "让两个或多个图形在空间上重叠，形成层次与新关系",
+        "instruction": "把两个图形叠在一起，看看重叠的地方变成了什么新图案？",
+        "hints": [
+            "大图形和小图形叠在一起",
+            "同样的形状错开位置叠加",
+            "重叠部分可以画上特别的装饰",
+        ],
+        "examples": [
+            "两个圆叠在一起像眼镜",
+            "三角形叠上方形像房子",
+            "多个圆层层叠加像花朵",
+        ],
+        "sort_order": 3,
     },
     {
-        "id": "struct_combine",
-        "category": "structure",
-        "name_zh": "组合",
-        "name_en": "Combine",
-        "icon": "🤝",
-        "description": "把两个或多个不同的对象合并成一个新整体",
-        "question_template": "如果把【对象】和另一个完全不同的东西合在一起，会变成什么？",
-        "hints": ["最意想不到的组合往往最有趣", "合并后要有新功能", "形状+功能都可以组合"],
-        "scoring_keywords": ["组合", "合并", "合体", "结合", "混搭"],
-        "min_age": 6,
+        "id": "join",
+        "name_zh": "拼接",
+        "name_en": "Join",
+        "description": "把两个或多个不同图形连接起来，形成新的整体对象",
+        "instruction": "选几个不同的图形，把它们拼在一起，看能变成什么新东西！",
+        "hints": [
+            "上下拼接、左右拼接效果不同",
+            "不同大小的图形拼在一起更有趣",
+            "拼接处可以自然过渡也可以直接连接",
+        ],
+        "examples": [
+            "半圆+长方形=冰棍",
+            "圆+三角+长方形=小人",
+            "多个方形拼接=城堡",
+        ],
+        "sort_order": 4,
     },
     {
-        "id": "struct_fuse",
-        "category": "structure",
-        "name_zh": "融合",
-        "name_en": "Fuse",
-        "icon": "🫧",
-        "description": "让两个对象无缝融合为一个新形态，边界消失",
-        "question_template": "如果【对象】和水/火/风融合在一起，新的形态是什么？",
-        "hints": ["融合不是简单叠加，是产生新物种", "自然界充满融合的例子", "融合后原来的边界消失了"],
-        "scoring_keywords": ["融合", "融化", "合一", "渗透", "交融"],
-        "min_age": 8,
+        "id": "notch_add",
+        "name_zh": "缺口与添加",
+        "name_en": "Notch & Add",
+        "description": "在原有图形中挖掉一部分，或补上一部分，使结构发生明显改变",
+        "instruction": "在图形上挖一个洞，或者在边上补一块，看看它变成了什么？",
+        "hints": [
+            "挖一个缺口像被咬了一口",
+            "补上一块像长出了什么",
+            "缺口和添加可以同时使用",
+        ],
+        "examples": [
+            "圆挖一个缺口变成吃豆人",
+            "方形缺一角变成门",
+            "三角形顶上补一个圆变成冰淇淋",
+        ],
+        "sort_order": 5,
     },
     {
-        "id": "struct_modular",
-        "category": "structure",
-        "name_zh": "模块化",
-        "name_en": "Modularize",
-        "icon": "🧱",
-        "description": "把对象设计成可替换、可拼接的模块",
-        "question_template": "如果【对象】的每个部分都可以拆下来换成别的，你会怎么设计？",
-        "hints": ["乐高就是模块化的典范", "模块化让一个东西有无数种变化", "想想哪些部分应该可以互换"],
-        "scoring_keywords": ["模块", "替换", "可拆", "可换", "积木", "插拔"],
-        "min_age": 9,
-    },
-
-    # === 空间变形 (6种) ===
-    {
-        "id": "space_rotate",
-        "category": "spatial",
-        "name_zh": "旋转",
-        "name_en": "Rotate",
-        "icon": "🔃",
-        "description": "改变对象的角度和朝向",
-        "question_template": "如果把【对象】转个方向，倒过来或侧过来看，你会发现什么？",
-        "hints": ["倒过来看世界会完全不同", "45度角往往最有趣", "旋转改变了重力关系"],
-        "scoring_keywords": ["旋转", "转", "倒", "侧", "翻", "角度"],
-        "min_age": 5,
-    },
-    {
-        "id": "space_flip",
-        "category": "spatial",
-        "name_zh": "翻转",
-        "name_en": "Flip",
-        "icon": "🪞",
-        "description": "镜像翻转，左右或上下对调",
-        "question_template": "如果【对象】在镜子里看到的样子变成了真的，会是什么？",
-        "hints": ["镜像世界里一切都是反的", "翻转可能暴露隐藏的一面", "对称也是一种翻转"],
-        "scoring_keywords": ["翻转", "镜像", "对称", "反面", "倒影"],
-        "min_age": 5,
-    },
-    {
-        "id": "space_extend",
-        "category": "spatial",
+        "id": "extend",
         "name_zh": "延展",
         "name_en": "Extend",
-        "icon": "🌱",
-        "description": "让对象向外生长、扩展，往外长出新的部分",
-        "question_template": "如果【对象】可以像植物一样往外长，它会长出什么？",
-        "hints": ["延展是生长的视觉化", "向不同方向延展会产生不同形态", "延展可以改变对象的功能"],
-        "scoring_keywords": ["延展", "生长", "伸展", "长出", "扩展", "往外"],
-        "min_age": 6,
+        "description": "从原有结构向外生长、伸展、扩展，使图形形成更大的空间关系或发展方向。延展是'往外长'",
+        "instruction": "让图形往外面长出新的东西！像植物发芽一样向外伸展。",
+        "hints": [
+            "从边缘往外长出线条或形状",
+            "像树枝一样向不同方向延伸",
+            "延展的部分可以比原来的图形更大",
+        ],
+        "examples": [
+            "圆往外长出触角变成太阳",
+            "方形四角延伸变成桌子",
+            "图形向下延展变成有脚的角色",
+        ],
+        "sort_order": 6,
     },
     {
-        "id": "space_diffuse",
-        "category": "spatial",
-        "name_zh": "扩散",
-        "name_en": "Diffuse",
-        "icon": "💫",
-        "description": "从中心向四周散开",
-        "question_template": "如果【对象】像烟花一样从中心炸开扩散，会变成什么图案？",
-        "hints": ["扩散有方向和速度", "从一个点到一片", "爆炸、绽放都是扩散"],
-        "scoring_keywords": ["扩散", "散开", "炸开", "绽放", "爆炸", "放射"],
-        "min_age": 6,
-    },
-    {
-        "id": "space_converge",
-        "category": "spatial",
-        "name_zh": "聚合",
-        "name_en": "Converge",
-        "icon": "🎯",
-        "description": "从四周向中心汇聚",
-        "question_template": "如果很多个小【对象】从四面八方聚到一起，它们会变成什么大东西？",
-        "hints": ["聚合是扩散的反面", "很多小东西聚在一起可以变成新形态", "聚合可以产生密度变化"],
-        "scoring_keywords": ["聚合", "汇聚", "集中", "聚集", "凝聚"],
-        "min_age": 7,
-    },
-    {
-        "id": "space_stack",
-        "category": "spatial",
-        "name_zh": "堆叠",
-        "name_en": "Stack",
-        "icon": "📚",
-        "description": "把多个对象层层叠加",
-        "question_template": "如果把很多个【对象】一层一层叠起来，叠成一座塔，会是什么样？",
-        "hints": ["叠加产生高度", "不同大小的叠加更有趣", "叠加可以产生渐变效果"],
-        "scoring_keywords": ["堆叠", "叠", "层", "塔", "堆", "累积"],
-        "min_age": 5,
-    },
-
-    # === 状态变形 (4种) ===
-    {
-        "id": "state_transparent",
-        "category": "state",
-        "name_zh": "透明化",
-        "name_en": "Transparent",
-        "icon": "👻",
-        "description": "让不透明的对象变透明，看到内部",
-        "question_template": "如果【对象】突然变透明了，你能看到里面有什么？",
-        "hints": ["透明让隐藏的结构可见", "半透明和全透明是不同的", "透明改变了内外关系"],
-        "scoring_keywords": ["透明", "看穿", "内部", "半透明", "玻璃"],
-        "min_age": 8,
-    },
-    {
-        "id": "state_reveal",
-        "category": "state",
-        "name_zh": "显现",
-        "name_en": "Reveal",
-        "icon": "✨",
-        "description": "让看不见的东西变得可见",
-        "question_template": "【对象】身上有什么我们平时看不见的东西？如果它们都显现出来呢？",
-        "hints": ["声音如果可以看见是什么形状", "情绪如果有颜色会是什么", "气味如果可见会怎样"],
-        "scoring_keywords": ["显现", "看见", "出现", "可见", "显示"],
-        "min_age": 8,
-    },
-    {
-        "id": "state_transform",
-        "category": "state",
-        "name_zh": "状态转化",
-        "name_en": "State Transform",
-        "icon": "🧊",
-        "description": "改变对象的物质状态，如固液气转化",
-        "question_template": "如果【对象】融化了/冻住了/蒸发了/变成石头了，会是什么样子？",
-        "hints": ["冰变水变蒸汽都是同一个东西", "液态的东西可以流动重塑", "每种状态有不同的美"],
-        "scoring_keywords": ["融化", "冰冻", "蒸发", "液体", "固体", "气体"],
-        "min_age": 8,
-    },
-    {
-        "id": "state_virtual",
-        "category": "state",
-        "name_zh": "虚拟化",
-        "name_en": "Virtualize",
-        "icon": "🌐",
-        "description": "把现实对象变成虚拟/数字形态，或反过来",
-        "question_template": "如果【对象】进入了电脑游戏世界/从游戏来到现实，会变成什么？",
-        "hints": ["游戏世界的物理法则不同", "像素化是一种虚拟化", "从2D到3D也是一种转化"],
-        "scoring_keywords": ["虚拟", "像素", "数字", "游戏", "网络"],
-        "min_age": 10,
-    },
-
-    # === 关系变形 (4种) ===
-    {
-        "id": "rel_branch",
-        "category": "relation",
-        "name_zh": "分支",
-        "name_en": "Branch",
-        "icon": "🌳",
-        "description": "从一个对象分出多个分支，像树木生长",
-        "question_template": "如果【对象】像大树一样长出很多分支，每个分支是什么？",
-        "hints": ["树、河流、闪电都是分支形态", "分支可以越分越细", "每个分支可以不同"],
-        "scoring_keywords": ["分支", "分叉", "树枝", "分出", "枝"],
-        "min_age": 6,
-    },
-    {
-        "id": "rel_connect",
-        "category": "relation",
-        "name_zh": "连结",
-        "name_en": "Connect",
-        "icon": "🔗",
-        "description": "在原本没有关系的对象之间建立连接",
-        "question_template": "【对象】可以和什么意想不到的东西连接在一起？连接后有什么新功能？",
-        "hints": ["桥梁就是连结两岸", "连接产生新的关系", "无线连接也算"],
-        "scoring_keywords": ["连接", "连结", "桥", "通道", "链接"],
-        "min_age": 6,
-    },
-    {
-        "id": "rel_reverse",
-        "category": "relation",
-        "name_zh": "反转",
-        "name_en": "Reverse",
-        "icon": "🔀",
-        "description": "把对象的某种属性反过来",
-        "question_template": "如果【对象】的功能/颜色/大小/角色完全反过来，会怎样？",
-        "hints": ["大的变小，小的变大", "吃东西的变成被吃的", "老师变学生"],
-        "scoring_keywords": ["反转", "相反", "颠倒", "反过来", "逆"],
-        "min_age": 7,
-    },
-    {
-        "id": "rel_alternate",
-        "category": "relation",
-        "name_zh": "交替",
-        "name_en": "Alternate",
-        "icon": "🔁",
-        "description": "两种或多种状态/形态交替出现，形成节奏",
-        "question_template": "如果【对象】在两种完全不同的样子之间来回变化，那两种样子分别是什么？",
-        "hints": ["白天黑夜就是交替", "交替产生节奏和韵律", "不同速度的交替感觉不同"],
-        "scoring_keywords": ["交替", "轮流", "来回", "切换", "节奏"],
-        "min_age": 7,
-    },
-
-    # === 创意变形 (4种) ===
-    {
-        "id": "creative_personify",
-        "category": "creative",
-        "name_zh": "拟人化",
-        "name_en": "Personify",
-        "icon": "🎭",
-        "description": "给无生命的对象赋予人的特征和情感",
-        "question_template": "如果【对象】有了眼睛、手脚和表情，它的性格是什么？它在想什么？",
-        "hints": ["不是所有拟人都要加眼睛嘴巴", "性格比外形更重要", "它会和谁做朋友"],
-        "scoring_keywords": ["拟人", "表情", "性格", "说话", "感情", "活的"],
-        "min_age": 5,
-    },
-    {
-        "id": "creative_simplify",
-        "category": "creative",
-        "name_zh": "简化",
-        "name_en": "Simplify",
-        "icon": "⭕",
-        "description": "去除细节，保留最核心的形态特征",
-        "question_template": "如果只用最少的线条画出【对象】，你会保留哪些部分？",
-        "hints": ["图标就是极度简化的结果", "简化后最重要的特征要保留", "越简单越需要功力"],
-        "scoring_keywords": ["简化", "简单", "精简", "去掉", "最少", "符号"],
-        "min_age": 7,
-    },
-    {
-        "id": "creative_nest",
-        "category": "creative",
-        "name_zh": "嵌套",
-        "name_en": "Nest",
-        "icon": "🎁",
-        "description": "把一个对象放在另一个里面，层层包裹",
-        "question_template": "如果【对象】里面还有一个小的自己，打开还有更小的，会是什么样？",
-        "hints": ["俄罗斯套娃就是嵌套", "每层可以不一样", "嵌套产生惊喜感"],
-        "scoring_keywords": ["嵌套", "里面", "套娃", "包含", "层层", "内部"],
-        "min_age": 7,
-    },
-    {
-        "id": "creative_random",
-        "category": "creative",
-        "name_zh": "随机化",
-        "name_en": "Randomize",
-        "icon": "🎲",
-        "description": "引入随机和偶然因素，产生意外效果",
-        "question_template": "如果【对象】的颜色/形状/大小都随机变化，最奇妙的组合是什么？",
-        "hints": ["意外往往比计划更有趣", "随机不是混乱", "在随机中找规律也是创造"],
-        "scoring_keywords": ["随机", "意外", "偶然", "惊喜", "随便", "碰巧"],
-        "min_age": 8,
+        "id": "increase",
+        "name_zh": "增加",
+        "name_en": "Increase",
+        "description": "在原有图形或结构基础上，自由增加新的线条、细节、部件、复制元素或附属对象，使对象更丰富、更完整或更具个体特征。增加是'往里面添内容'",
+        "instruction": "给你的图形添加更多内容！可以画表情、花纹、小部件，让它变成独一无二的角色！",
+        "hints": [
+            "添加眼睛嘴巴它就有了表情",
+            "添加花纹线条它就更好看",
+            "添加小部件它就有了新功能",
+        ],
+        "examples": [
+            "圆+眼睛+嘴巴=笑脸",
+            "方形+门+窗=房子",
+            "三角+花纹+尾巴=小鱼",
+        ],
+        "sort_order": 7,
     },
 ]
 
-# 模块A专用：组合表达的呈现方式
-COMBINATION_MODES = [
-    {"id": "repeat",          "name_zh": "重复",       "description": "同一原型反复排列"},
-    {"id": "arrange",         "name_zh": "排列",       "description": "多种原型按规律排列"},
-    {"id": "density",         "name_zh": "疏密变化",   "description": "通过疏密产生视觉节奏"},
-    {"id": "thickness",       "name_zh": "粗细变化",   "description": "改变线条粗细产生层次"},
-    {"id": "direction",       "name_zh": "方向变化",   "description": "改变线条方向产生动态"},
-    {"id": "surround",        "name_zh": "环绕",       "description": "线条围绕中心环绕排列"},
-    {"id": "cross",           "name_zh": "交叉",       "description": "不同线条交叉叠加"},
-    {"id": "zone_fill",       "name_zh": "分区填充",   "description": "将画面分区用不同原型填充"},
-    {"id": "center_spread",   "name_zh": "中心扩散",   "description": "从中心向外逐层扩散"},
-]
+# ============================================================
+# "增加"动作的5种子类型
+# ============================================================
 
-# 模块B专用：增加动作的5种子类型
 INCREASE_SUBTYPES = [
-    {"id": "detail_add",      "name_zh": "细节增加",   "description": "在已有形态上添加纹理、表情等细节"},
-    {"id": "line_add",        "name_zh": "线条增加",   "description": "用线条丰富对象的轮廓或内部"},
-    {"id": "part_add",        "name_zh": "部件增加",   "description": "给对象添加新的功能性部件"},
-    {"id": "duplicate_add",   "name_zh": "复制增加",   "description": "重复某个元素产生节奏感"},
-    {"id": "accessory_add",   "name_zh": "附属对象增加", "description": "给对象添加独立的附属小物件"},
+    {
+        "id": "detail_add",
+        "parent_action": "increase",
+        "name_zh": "细节增加",
+        "name_en": "Detail Add",
+        "description": "在已有形态上添加纹理、表情、花纹等细节，让对象更精致",
+        "examples": ["给圆脸画上笑脸表情", "在花瓶上画出花纹", "给动物画上斑点"],
+    },
+    {
+        "id": "line_add",
+        "parent_action": "increase",
+        "name_zh": "线条增加",
+        "name_en": "Line Add",
+        "description": "用线条丰富对象的轮廓或内部，如胡须、头发、毛发质感",
+        "examples": ["给太阳画出光芒线", "给小猫画上胡须", "给衣服画上条纹"],
+    },
+    {
+        "id": "part_add",
+        "parent_action": "increase",
+        "name_zh": "部件增加",
+        "name_en": "Part Add",
+        "description": "给对象添加新的功能性部件，如手、脚、轮子、翅膀",
+        "examples": ["给角色添上翅膀", "给机器人加上手臂", "给汽车装上轮子"],
+    },
+    {
+        "id": "duplicate_add",
+        "parent_action": "increase",
+        "name_zh": "复制增加",
+        "name_en": "Duplicate Add",
+        "description": "重复某个元素产生节奏感，如多个窗户、一排牙齿",
+        "examples": ["大楼上画一排排窗户", "嘴巴里画出一排牙齿", "花园里复制很多花"],
+    },
+    {
+        "id": "accessory_add",
+        "parent_action": "increase",
+        "name_zh": "附属对象增加",
+        "name_en": "Accessory Add",
+        "description": "给对象添加独立的附属小物件，如帽子、围巾、手提包",
+        "examples": ["给角色戴上帽子", "给房子旁边画一棵树", "给动物加一个蝴蝶结"],
+    },
 ]
 
+
+# ============================================================
+# 模块A：原型组合的呈现方式（构图方式）
+# ============================================================
+
+COMBINATION_MODES = [
+    {"id": "repeat",          "name_zh": "重复",       "description": "同一原型反复排列，形成节奏感"},
+    {"id": "arrange",         "name_zh": "排列",       "description": "多种原型按规律排列，形成有序的画面"},
+    {"id": "density",         "name_zh": "疏密变化",   "description": "通过线条疏密产生视觉节奏和层次"},
+    {"id": "thickness",       "name_zh": "粗细变化",   "description": "改变线条粗细产生对比和层次"},
+    {"id": "direction",       "name_zh": "方向变化",   "description": "改变线条方向产生动态和运动感"},
+    {"id": "surround",        "name_zh": "环绕",       "description": "线条围绕中心环绕排列，形成向心结构"},
+    {"id": "cross",           "name_zh": "交叉",       "description": "不同线条交叉叠加，形成编织感"},
+    {"id": "zone_fill",       "name_zh": "分区填充",   "description": "将画面分区，用不同原型填充各区"},
+    {"id": "center_spread",   "name_zh": "中心扩散",   "description": "从中心向外逐层扩散，由内而外展开"},
+]
+
+
+# ============================================================
+# 模块B：难度梯度
+# ============================================================
+
+MODULE_B_DIFFICULTY = [
+    {"level": 1, "name_zh": "单形变形",   "description": "对一个基础形进行单一变形动作"},
+    {"level": 2, "name_zh": "双形拼接",   "description": "两个基础形通过拼接形成新对象"},
+    {"level": 3, "name_zh": "多形生成",   "description": "多个基础形组合变形生成复杂结构"},
+    {"level": 4, "name_zh": "主题生成",   "description": "围绕主题自由运用多种变形生成角色或场景"},
+    {"level": 5, "name_zh": "系列生成",   "description": "生成一组有关联的系列作品或角色家族"},
+]
+
+
+# ============================================================
+# 模块B：任务类型
+# ============================================================
+
+MODULE_B_TASK_TYPES = [
+    {"id": "single_transform",   "name_zh": "单形变形任务",     "description": "对一个基础形执行指定变形动作"},
+    {"id": "double_join",        "name_zh": "双形拼接任务",     "description": "选两个基础形拼接成新对象"},
+    {"id": "multi_generate",     "name_zh": "多形结构生成任务", "description": "用多个基础形和多种动作生成复杂结构"},
+    {"id": "theme_generate",     "name_zh": "主题生成任务",     "description": "围绕给定主题自由创造"},
+    {"id": "series_generate",    "name_zh": "系列生成任务",     "description": "创造一组有关联的系列作品"},
+    {"id": "detail_increase",    "name_zh": "增加细节任务",     "description": "给已有图形增加细节使其更丰富"},
+    {"id": "accessory_increase", "name_zh": "增加附属任务",     "description": "给已有图形添加附属对象"},
+]
+
+
+# ============================================================
+# 模块B：作品输出类型
+# ============================================================
+
+MODULE_B_OUTPUT_TYPES = [
+    {"id": "fantasy_creature",   "name_zh": "奇想生物",   "description": "通过变形生成的奇特生物"},
+    {"id": "dream_building",     "name_zh": "梦幻建筑",   "description": "通过拼接叠加生成的建筑"},
+    {"id": "structure_character", "name_zh": "结构型角色", "description": "由基础形变形组合而成的角色"},
+    {"id": "transform_plant",    "name_zh": "变形植物",   "description": "从基础形延展增加而成的植物"},
+    {"id": "generative_object",  "name_zh": "生成式物体", "description": "通过多种动作生成的新物体"},
+    {"id": "theme_series",       "name_zh": "主题系列",   "description": "围绕主题的系列作品"},
+    {"id": "ip_prototype",       "name_zh": "IP雏形",     "description": "具备文创潜力的小型角色"},
+]
+
+
+# ============================================================
+# 便捷函数
+# ============================================================
 
 def get_all_transforms():
-    """获取全部30种变形方法"""
-    return TRANSFORM_METHODS
+    """获取7种变形动作"""
+    return TRANSFORM_ACTIONS
 
 
-def get_transforms_by_category(category: str):
-    """按母类获取变形方法"""
-    return [t for t in TRANSFORM_METHODS if t["category"] == category]
+def get_increase_subtypes():
+    """获取增加动作的5种子类型"""
+    return INCREASE_SUBTYPES
 
 
-def get_transforms_for_age(min_age: int, max_age: int = 99):
-    """获取适合特定年龄段的变形方法"""
-    return [t for t in TRANSFORM_METHODS if t["min_age"] <= max_age]
+def get_transform_by_id(action_id: str):
+    """根据ID获取变形动作"""
+    for a in TRANSFORM_ACTIONS:
+        if a["id"] == action_id:
+            return a
+    return None
 
 
-TOTAL_TRANSFORMS = len(TRANSFORM_METHODS)  # = 30
+TOTAL_TRANSFORM_ACTIONS = len(TRANSFORM_ACTIONS)  # = 7
+TOTAL_INCREASE_SUBTYPES = len(INCREASE_SUBTYPES)   # = 5

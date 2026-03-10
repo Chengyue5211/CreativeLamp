@@ -24,13 +24,17 @@ async def api_list_prototypes(
 
 
 @router.get("/transforms")
-async def api_list_transforms(
-    category: Optional[str] = None,
-    max_age: Optional[int] = None,
-):
-    """获取变形方法库"""
-    transforms = get_transform_library(category, max_age)
-    return {"transforms": transforms, "total": len(transforms)}
+async def api_list_transforms():
+    """获取7种变形动作（图形变形与结构生成）"""
+    transforms = get_transform_library()
+    return {"actions": transforms, "total": len(transforms)}
+
+
+@router.get("/increase-subtypes")
+async def api_list_increase_subtypes():
+    """获取增加动作的5种子类型"""
+    from data.transforms import INCREASE_SUBTYPES
+    return {"subtypes": INCREASE_SUBTYPES, "total": len(INCREASE_SUBTYPES)}
 
 
 @router.get("/levels")

@@ -26,10 +26,16 @@ const API = {
         if (data && method !== "GET") opts.body = JSON.stringify(data);
 
         const resp = await fetch(this.base + path, opts);
-        const json = await resp.json();
+
+        let json;
+        try {
+            json = await resp.json();
+        } catch {
+            throw new Error(`服务器错误 (${resp.status})，请稍后再试`);
+        }
 
         if (!resp.ok) {
-            throw new Error(json.detail || "请求失败");
+            throw new Error(json.detail || `请求失败 (${resp.status})`);
         }
         return json;
     },
@@ -44,7 +50,7 @@ const API = {
 
     // 训练（用孩子token）
     getPrototypes: (params = "") => API.request("GET", `/training/prototypes${params}`, null, true),
-    getTransforms: (params = "") => API.request("GET", `/training/transforms${params}`, null, true),
+    getTransforms: () => API.request("GET", "/training/transforms", null, true),
     getLevels: () => API.request("GET", "/training/levels", null, true),
     generateDailyTask: () => API.request("POST", "/training/daily-task", null, true),
     getTodayTasks: () => API.request("GET", "/training/today", null, true),
@@ -70,6 +76,10 @@ function navigate(page, params = {}) {
         case "task-detail": renderTaskDetail(container, params); break;
         case "prototypes": renderPrototypeLibrary(container, params); break;
         case "transforms": renderTransformLibrary(container, params); break;
+        case "contours": renderContourLibrary(container, params); break;
+        case "gallery": renderGallery(container, params); break;
+        case "print-preview": renderPrintPreview(container, params); break;
+        case "upload-work": renderUploadWork(container, params); break;
         default: renderLogin(container);
     }
 }
@@ -238,25 +248,25 @@ async function renderChildHome(container) {
                 <div style="margin-top:24px;">
                     <div class="section-title">探索</div>
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        <div class="card" onclick="navigate('contours')" style="text-align:center; cursor:pointer; border-color:#D98B5F; border-width:2px;">
+                            <div style="font-size:2rem; margin-bottom:8px;">🎨</div>
+                            <div style="font-weight:600; font-size:0.9rem;">图形库</div>
+                            <div style="font-size:0.75rem; color:var(--gray-500);">动物·植物·物品</div>
+                        </div>
+                        <div class="card" onclick="navigate('transforms')" style="text-align:center; cursor:pointer; border-color:#9B6DBF; border-width:2px;">
+                            <div style="font-size:2rem; margin-bottom:8px;">✨</div>
+                            <div style="font-weight:600; font-size:0.9rem;">变形魔法</div>
+                            <div style="font-size:0.75rem; color:var(--gray-500);">7种创造技法</div>
+                        </div>
                         <div class="card" onclick="navigate('prototypes', {module:'A'})" style="text-align:center; cursor:pointer;">
                             <div style="font-size:2rem; margin-bottom:8px;">📐</div>
                             <div style="font-weight:600; font-size:0.9rem;">线条原型库</div>
                             <div style="font-size:0.75rem; color:var(--gray-500);">108种线条</div>
                         </div>
-                        <div class="card" onclick="navigate('transforms')" style="text-align:center; cursor:pointer;">
-                            <div style="font-size:2rem; margin-bottom:8px;">✨</div>
-                            <div style="font-weight:600; font-size:0.9rem;">变形魔法库</div>
-                            <div style="font-size:0.75rem; color:var(--gray-500);">30种变形</div>
-                        </div>
-                        <div class="card" onclick="navigate('prototypes', {module:'B'})" style="text-align:center; cursor:pointer;">
-                            <div style="font-size:2rem; margin-bottom:8px;">🔷</div>
-                            <div style="font-weight:600; font-size:0.9rem;">基础图形库</div>
-                            <div style="font-size:0.75rem; color:var(--gray-500);">9种基础形</div>
-                        </div>
-                        <div class="card" style="text-align:center; opacity:0.5;">
+                        <div class="card" onclick="navigate('gallery')" style="text-align:center; cursor:pointer; border-color:#4E8D7C; border-width:2px;">
                             <div style="font-size:2rem; margin-bottom:8px;">🖼️</div>
                             <div style="font-weight:600; font-size:0.9rem;">我的展馆</div>
-                            <div style="font-size:0.75rem; color:var(--gray-500);">即将开放</div>
+                            <div style="font-size:0.75rem; color:var(--gray-500);">我的作品集</div>
                         </div>
                     </div>
                 </div>
@@ -321,7 +331,11 @@ async function renderTaskDetail(container, params) {
                     <div class="proto-grid">
                         ${task.prototypes.map(p => `
                             <div class="proto-cell selected">
-                                <div class="proto-cell-icon">${task.module === 'A' ? '〰️' : '🔷'}</div>
+                                <div class="proto-cell-icon">${
+                                    task.module === 'A'
+                                        ? (typeof LineSVG !== 'undefined' ? LineSVG.generate(p.category, p.variant_index || 1) : '〰️')
+                                        : (typeof LineSVG !== 'undefined' ? LineSVG.generateShape(p.id) : '🔷')
+                                }</div>
                                 <div class="proto-cell-name">${escapeHtml(p.name_zh)}</div>
                             </div>
                         `).join("")}
@@ -331,13 +345,11 @@ async function renderTaskDetail(container, params) {
                 ${task.transforms.length > 0 ? `
                     <div class="section-title">本次使用的变形魔法</div>
                     ${task.transforms.map(t => `
-                        <div class="transform-card">
-                            <div class="transform-icon" style="background:${t.color || '#f0f0f0'}22;">
-                                ${t.icon || "✨"}
-                            </div>
-                            <div class="transform-info">
-                                <div class="transform-name">${escapeHtml(t.name_zh)}</div>
-                                <div class="transform-desc">${escapeHtml(t.description || "")}</div>
+                        <div class="card" style="margin-bottom:10px;">
+                            <div style="font-weight:700; font-size:1rem; margin-bottom:6px;">${escapeHtml(t.name_zh)}</div>
+                            <div style="font-size:0.85rem; color:var(--gray-600); margin-bottom:8px;">${escapeHtml(t.description || "")}</div>
+                            <div style="background:var(--gray-50); border-radius:10px; padding:8px; text-align:center;">
+                                ${typeof TransformSVG !== 'undefined' ? TransformSVG.generateLarge(t.id, '') : ''}
                             </div>
                         </div>
                     `).join("")}
@@ -421,7 +433,11 @@ async function renderPrototypeLibrary(container, params) {
                     <div class="proto-grid">
                         ${items.map(p => `
                             <div class="proto-cell">
-                                <div class="proto-cell-icon">${module === "A" ? "〰️" : "🔷"}</div>
+                                <div class="proto-cell-icon">${
+                                    module === "A"
+                                        ? (typeof LineSVG !== 'undefined' ? LineSVG.generate(p.category, p.variant_index || 1) : "〰️")
+                                        : (typeof LineSVG !== 'undefined' ? LineSVG.generateShape(p.id) : "🔷")
+                                }</div>
                                 <div class="proto-cell-name">${escapeHtml(p.name_zh)}</div>
                             </div>
                         `).join("")}
@@ -437,47 +453,358 @@ async function renderPrototypeLibrary(container, params) {
 async function renderTransformLibrary(container) {
     try {
         const resp = await API.getTransforms();
-        const transforms = resp.transforms || [];
+        const actions = resp.actions || [];
 
-        // 按母类分组
-        const groups = {};
-        transforms.forEach(t => {
-            if (!groups[t.category]) groups[t.category] = [];
-            groups[t.category].push(t);
-        });
-
-        const catNames = {
-            scale_form: "尺度与形态", structure: "结构变形", spatial: "空间变形",
-            state: "状态变形", relation: "关系变形", creative: "创意变形"
+        // 变形动作的儿童友好名称和颜色
+        const actionMeta = {
+            stretch:   { emoji: "📏", label: "拉一拉", color: "#E8F5F1", border: "#4E8D7C" },
+            split:     { emoji: "✂️", label: "切一切", color: "#FFF4EB", border: "#D98B5F" },
+            overlap:   { emoji: "🔄", label: "叠一叠", color: "#F0F7FF", border: "#89B4D4" },
+            join:      { emoji: "🧩", label: "拼一拼", color: "#FFF4EB", border: "#D98B5F" },
+            notch_add: { emoji: "✨", label: "挖一挖", color: "#FFF0F0", border: "#CC4444" },
+            extend:    { emoji: "🌱", label: "长一长", color: "#E8D4F5", border: "#9B6DBF" },
+            increase:  { emoji: "🎨", label: "添一添", color: "#FFE8CC", border: "#D98B5F" },
         };
 
         container.innerHTML = `
-            <div class="header" style="background:linear-gradient(135deg, var(--accent-500), var(--accent-400));">
-                <h1>变形魔法库</h1>
-                <div class="header-subtitle">7大母类 · 30种变形方法</div>
+            <div class="header" style="background:linear-gradient(135deg, #D98B5F, #E8A87C);">
+                <h1>变形魔法工坊</h1>
+                <div class="header-subtitle">看看基础形能变成什么有趣的东西！</div>
                 <div class="header-actions">
                     <button onclick="navigate('child-home')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
                 </div>
             </div>
             <div class="page">
-                <p style="color:var(--gray-500); font-size:0.85rem; margin-bottom:16px;">
-                    任意对象 x 任意变形 = 无限创造。掌握这些变形魔法，你就是小小创造家！
-                </p>
-                ${Object.entries(groups).map(([cat, items]) => `
-                    <div class="section-title">${catNames[cat] || cat}（${items.length}种）</div>
-                    ${items.map(t => `
-                        <div class="transform-card">
-                            <div class="transform-icon" style="background:${t.color || '#f0f0f0'}22; font-size:1.5rem;">
-                                ${t.icon}
+                <div class="card" style="background:linear-gradient(135deg, #FFF8F0, #FFF4EB); border-color:#F0D4B8; margin-bottom:16px; text-align:center;">
+                    <p style="font-size:1rem; color:#8B5A2B; line-height:1.8; font-weight:600;">
+                        从简单的圆、方、三角出发<br>
+                        用7种魔法变成各种有趣的东西！
+                    </p>
+                    <p style="font-size:0.8rem; color:#B88B60; margin-top:4px;">
+                        点开每种魔法，看看能创造什么
+                    </p>
+                </div>
+
+                ${actions.map((a, i) => {
+                    const meta = actionMeta[a.id] || { emoji: "✨", label: a.name_zh, color: "#F5F5F5", border: "#CCC" };
+                    const creations = (typeof TransformSVG !== 'undefined' && TransformSVG.creationMap[a.id]) || [];
+
+                    return `
+                    <div class="card" style="margin-bottom:14px; border-color:${meta.border}; border-width:2px; overflow:hidden;">
+                        <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+                            <div style="font-size:1.8rem;">${meta.emoji}</div>
+                            <div>
+                                <div style="font-weight:700; font-size:1.1rem; color:${meta.border};">
+                                    ${meta.label}
+                                    <span style="font-size:0.75rem; color:var(--gray-400); font-weight:400; margin-left:4px;">${escapeHtml(a.name_zh)} · ${escapeHtml(a.name_en)}</span>
+                                </div>
+                                <div style="font-size:0.82rem; color:var(--gray-600); margin-top:2px;">${escapeHtml(a.instruction)}</div>
                             </div>
-                            <div class="transform-info">
-                                <div class="transform-name">${escapeHtml(t.name_zh)} <span style="color:var(--gray-400); font-size:0.75rem;">${escapeHtml(t.name_en)}</span></div>
-                                <div class="transform-desc">${escapeHtml(t.description)}</div>
-                                <div style="font-size:0.7rem; color:var(--gray-400); margin-top:4px;">${t.min_age}岁+</div>
+                        </div>
+
+                        <!-- 前→后 SVG动画演示 -->
+                        <div style="background:${meta.color}; border-radius:10px; padding:8px; margin-bottom:10px; text-align:center;">
+                            ${typeof TransformSVG !== 'undefined' ? TransformSVG.generate(a.id) : ''}
+                        </div>
+
+                        <!-- 可以创造什么 -->
+                        ${creations.length > 0 ? `
+                            <div style="font-size:0.78rem; color:var(--gray-500); font-weight:600; margin-bottom:6px;">用这个魔法可以创造：</div>
+                            <div style="display:flex; gap:8px; overflow-x:auto; padding-bottom:4px;">
+                                ${creations.map(c => `
+                                    <div style="flex-shrink:0; text-align:center; background:${meta.color}; border-radius:10px; padding:6px 8px; min-width:80px;">
+                                        ${typeof TransformSVG !== 'undefined' && TransformSVG.examples[c.id] ? TransformSVG.generateExample(c.id) : ''}
+                                        <div style="font-size:0.85rem; font-weight:600; color:${meta.border}; margin-top:2px;">${escapeHtml(c.name)}</div>
+                                        <div style="font-size:0.65rem; color:var(--gray-500);">${escapeHtml(c.desc)}</div>
+                                    </div>
+                                `).join("")}
+                            </div>
+                        ` : ''}
+                    </div>
+                    `;
+                }).join("")}
+
+                <div class="section-title" style="margin-top:20px;">"添一添"的5种玩法</div>
+                <p style="font-size:0.8rem; color:var(--gray-500); margin-bottom:10px;">
+                    "添一添"最自由——往图形里面添内容，想加什么就加什么！
+                </p>
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:8px;">
+                    ${[
+                        {name:'画表情', desc:'眼睛嘴巴 让它活起来', icon:'😊', color:'#FFF4EB'},
+                        {name:'加线条', desc:'胡须光芒 让它更酷', icon:'✏️', color:'#E8F5F1'},
+                        {name:'装零件', desc:'翅膀轮子 给它超能力', icon:'🔧', color:'#F0F7FF'},
+                        {name:'变多多', desc:'复制窗户 排成一排', icon:'📋', color:'#FFF0F0'},
+                        {name:'戴饰品', desc:'帽子围巾 打扮起来', icon:'🎀', color:'#E8D4F5'},
+                    ].map(s => `
+                        <div class="card" style="padding:12px; text-align:center; background:${s.color};">
+                            <div style="font-size:1.5rem;">${s.icon}</div>
+                            <div style="font-weight:700; font-size:0.85rem; margin-top:4px;">${s.name}</div>
+                            <div style="font-size:0.7rem; color:var(--gray-500); margin-top:2px;">${s.desc}</div>
+                        </div>
+                    `).join("")}
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        showToast(e.message, "error");
+    }
+}
+
+// ============================================================
+// 轮廓图形库页面 — 动物、植物、生活用品等
+// ============================================================
+async function renderContourLibrary(container) {
+    if (typeof ContourSVG === 'undefined') {
+        container.innerHTML = '<div class="page"><p>图形库加载失败，请刷新页面</p></div>';
+        return;
+    }
+
+    const categories = ContourSVG.categories;
+    let activeCategory = "animals";
+
+    function render() {
+        const items = ContourSVG.getByCategory(activeCategory);
+        const catInfo = categories[activeCategory];
+
+        container.innerHTML = `
+            <div class="header" style="background:linear-gradient(135deg, #D98B5F, #E8A87C);">
+                <h1>图形库</h1>
+                <div class="header-subtitle">选一个图形，下载打印，画出你的创意！</div>
+                <div class="header-actions">
+                    <button onclick="navigate('child-home')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
+                </div>
+            </div>
+            <div class="page">
+                <!-- 分类标签 -->
+                <div style="display:flex; gap:6px; overflow-x:auto; padding:4px 0 12px; -webkit-overflow-scrolling:touch;">
+                    ${Object.entries(categories).map(([catId, cat]) => `
+                        <button onclick="switchContourCategory('${catId}')"
+                            style="flex-shrink:0; padding:8px 14px; border-radius:20px; border:2px solid ${activeCategory === catId ? cat.color.replace('#E', '#8').replace('#F', '#C') : '#E0E0E0'};
+                            background:${activeCategory === catId ? cat.color : '#fff'}; font-size:0.85rem; cursor:pointer; font-weight:${activeCategory === catId ? '700' : '400'};">
+                            ${cat.icon} ${cat.name}
+                        </button>
+                    `).join("")}
+                </div>
+
+                <!-- 图形网格 -->
+                <div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">
+                    ${items.map(item => `
+                        <div class="card" style="text-align:center; padding:12px; cursor:pointer; transition:all 0.2s;"
+                             onclick="navigate('print-preview', {contourId:'${item.id}'})">
+                            <div style="background:${catInfo.color}; border-radius:12px; padding:10px; margin-bottom:8px;">
+                                ${ContourSVG.generate(item.id)}
+                            </div>
+                            <div style="font-weight:700; font-size:0.95rem;">${escapeHtml(item.name)}</div>
+                            <div style="font-size:0.72rem; color:var(--gray-500); margin-top:2px;">${escapeHtml(item.description)}</div>
+                            <div style="margin-top:6px;">
+                                <span style="font-size:0.7rem; background:var(--primary-50); color:var(--primary-600); padding:2px 8px; border-radius:10px;">
+                                    ${'⭐'.repeat(item.difficulty)}
+                                </span>
                             </div>
                         </div>
                     `).join("")}
-                `).join("")}
+                </div>
+
+                ${items.length === 0 ? `
+                    <div class="empty-state">
+                        <div class="empty-state-icon">${catInfo.icon}</div>
+                        <p>这个分类正在准备中...</p>
+                    </div>
+                ` : ''}
+            </div>
+        `;
+    }
+
+    // 分类切换函数
+    window.switchContourCategory = function(cat) {
+        activeCategory = cat;
+        render();
+    };
+
+    render();
+}
+
+// ============================================================
+// 打印预览页面 — 下载打印底稿
+// ============================================================
+function renderPrintPreview(container, params) {
+    const contourId = params?.contourId;
+    if (!contourId || typeof ContourSVG === 'undefined') {
+        navigate('contours');
+        return;
+    }
+
+    const item = ContourSVG.library[contourId];
+    if (!item) {
+        navigate('contours');
+        return;
+    }
+
+    const child = APP.currentChild || {};
+    const today = new Date().toLocaleDateString('zh-CN');
+
+    container.innerHTML = `
+        <div class="header" style="background:linear-gradient(135deg, var(--primary-500), var(--primary-400));">
+            <h1>${escapeHtml(item.name)}</h1>
+            <div class="header-subtitle">预览与下载打印</div>
+            <div class="header-actions">
+                <button onclick="navigate('contours')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
+            </div>
+        </div>
+        <div class="page">
+            <div class="card" style="text-align:center; padding:20px;">
+                <p style="font-size:0.85rem; color:var(--gray-600); margin-bottom:12px;">${escapeHtml(item.description)}</p>
+                <div id="print-area" style="background:#fff; border:2px solid #E0E0E0; border-radius:8px; padding:20px; max-width:400px; margin:0 auto;">
+                    <div style="text-align:center; font-size:0.8rem; color:#999; margin-bottom:10px;">
+                        绘创前程 · ${escapeHtml(item.name)} · ${escapeHtml(child.nickname || '')}
+                    </div>
+                    <div style="display:flex; justify-content:center;">
+                        ${ContourSVG.generatePrint ? ContourSVG.generatePrint(contourId) : ContourSVG.generate(contourId)}
+                    </div>
+                    <div style="margin-top:12px; display:flex; justify-content:space-between; font-size:0.75rem; color:#BBB;">
+                        <span>姓名：____________</span>
+                        <span>日期：${today}</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card" style="background:var(--accent-50); border-color:var(--accent-200);">
+                <div class="card-title">打印份数</div>
+                <p style="font-size:0.82rem; color:var(--gray-600); margin-bottom:10px;">
+                    同一个图形可以打印多张，用不同的风格来画！
+                </p>
+                <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
+                    <button onclick="changePrintCount(-1)" style="width:36px; height:36px; border-radius:50%; border:2px solid var(--primary-300); background:var(--primary-50); font-size:1.2rem; cursor:pointer;">-</button>
+                    <span id="print-count" style="font-size:1.5rem; font-weight:700; color:var(--primary-600); min-width:30px; text-align:center;">1</span>
+                    <button onclick="changePrintCount(1)" style="width:36px; height:36px; border-radius:50%; border:2px solid var(--primary-300); background:var(--primary-50); font-size:1.2rem; cursor:pointer;">+</button>
+                    <span style="font-size:0.8rem; color:var(--gray-500);">张</span>
+                </div>
+            </div>
+
+            <button class="btn btn-primary btn-large" onclick="doPrintContour('${contourId}')" style="margin-top:12px;">
+                🖨️ 下载打印
+            </button>
+
+            <button class="btn btn-outline btn-large" onclick="navigate('upload-work', {contourId:'${contourId}'})" style="margin-top:8px;">
+                📷 画好了？上传作品
+            </button>
+        </div>
+    `;
+}
+
+// ============================================================
+// 作品上传页面
+// ============================================================
+function renderUploadWork(container, params) {
+    const contourId = params?.contourId || '';
+    const contourName = (contourId && typeof ContourSVG !== 'undefined' && ContourSVG.library[contourId])
+        ? ContourSVG.library[contourId].name : '';
+
+    container.innerHTML = `
+        <div class="header" style="background:linear-gradient(135deg, #4E8D7C, #6BAF9C);">
+            <h1>上传作品</h1>
+            <div class="header-subtitle">${contourName ? '基于：' + escapeHtml(contourName) : '拍照上传你的创作'}</div>
+            <div class="header-actions">
+                <button onclick="navigate('child-home')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
+            </div>
+        </div>
+        <div class="page">
+            <div class="card" style="text-align:center; padding:30px;">
+                <div id="upload-preview" style="margin-bottom:16px;">
+                    <div style="width:200px; height:200px; margin:0 auto; border:3px dashed #CCC; border-radius:16px; display:flex; align-items:center; justify-content:center; cursor:pointer;"
+                         onclick="document.getElementById('photo-input').click()">
+                        <div>
+                            <div style="font-size:3rem;">📷</div>
+                            <div style="font-size:0.85rem; color:var(--gray-500); margin-top:8px;">点击拍照或选择照片</div>
+                        </div>
+                    </div>
+                </div>
+                <input type="file" id="photo-input" accept="image/*" capture="camera" style="display:none;" onchange="previewUploadPhoto(this)">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">作品名称</label>
+                <input type="text" id="work-title" class="form-input" placeholder="给作品起个名字吧" value="${contourName ? '我的' + escapeHtml(contourName) : ''}">
+            </div>
+
+            <div class="form-group">
+                <label class="form-label">想说点什么？（选填）</label>
+                <textarea id="work-desc" class="form-input" rows="2" placeholder="比如：我用波浪线装饰了蝴蝶的翅膀" style="resize:none;"></textarea>
+            </div>
+
+            ${contourId ? `<input type="hidden" id="work-contour-id" value="${contourId}">` : ''}
+
+            <button class="btn btn-primary btn-large" onclick="doUploadWork()">
+                上传到我的展馆
+            </button>
+        </div>
+    `;
+}
+
+// ============================================================
+// 我的展馆/进展区
+// ============================================================
+async function renderGallery(container) {
+    try {
+        let works = [];
+        try {
+            const resp = await API.request("GET", "/works/my", null, true);
+            works = resp.works || [];
+        } catch (e) {
+            // API可能还没实现，用空列表
+        }
+
+        const child = APP.currentChild || {};
+
+        container.innerHTML = `
+            <div class="header" style="background:linear-gradient(135deg, #4E8D7C, #6BAF9C);">
+                <h1>${escapeHtml(child.nickname || '')}的展馆</h1>
+                <div class="header-subtitle">我的创作天地 · ${works.length} 件作品</div>
+                <div class="header-actions">
+                    <button onclick="navigate('child-home')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
+                </div>
+            </div>
+            <div class="page">
+                ${works.length > 0 ? `
+                    <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+                        ${works.map(w => `
+                            <div class="card" style="padding:0; overflow:hidden;">
+                                <div style="height:140px; background:#F5F5F5; display:flex; align-items:center; justify-content:center;">
+                                    ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` :
+                                      `<div style="font-size:3rem;">🎨</div>`}
+                                </div>
+                                <div style="padding:10px;">
+                                    <div style="font-weight:600; font-size:0.85rem;">${escapeHtml(w.title || '无题')}</div>
+                                    <div style="font-size:0.7rem; color:var(--gray-400); margin-top:2px;">${escapeHtml(w.created_at || '')}</div>
+                                </div>
+                            </div>
+                        `).join("")}
+                    </div>
+                ` : `
+                    <div style="text-align:center; padding:40px 20px;">
+                        <div style="font-size:4rem; margin-bottom:16px;">🖼️</div>
+                        <h3 style="color:var(--gray-600); margin-bottom:8px;">展馆还是空的</h3>
+                        <p style="font-size:0.85rem; color:var(--gray-400); line-height:1.6; margin-bottom:20px;">
+                            完成训练任务，或者从图形库选一个图形打印出来画画，<br>
+                            然后拍照上传，你的作品就会出现在这里！
+                        </p>
+                        <div style="display:flex; gap:10px; justify-content:center; flex-wrap:wrap;">
+                            <button class="btn btn-primary" onclick="navigate('contours')">
+                                去图形库选图
+                            </button>
+                            <button class="btn btn-outline" onclick="navigate('upload-work')">
+                                直接上传作品
+                            </button>
+                        </div>
+                    </div>
+                `}
+            </div>
+
+            <div class="tab-bar">
+                <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item active"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
     } catch (e) {
@@ -590,6 +917,119 @@ async function startTask(taskId) {
     }
 }
 
+// 打印份数调整
+let _printCount = 1;
+function changePrintCount(delta) {
+    _printCount = Math.max(1, Math.min(10, _printCount + delta));
+    const el = document.getElementById("print-count");
+    if (el) el.textContent = _printCount;
+}
+
+// 下载打印轮廓图
+function doPrintContour(contourId) {
+    const printArea = document.getElementById("print-area");
+    if (!printArea) return;
+
+    const count = _printCount;
+    const printWin = window.open("", "_blank");
+    if (!printWin) {
+        showToast("请允许弹出窗口以打印", "error");
+        return;
+    }
+
+    let pages = "";
+    for (let i = 0; i < count; i++) {
+        pages += `<div class="print-page">${printArea.innerHTML}</div>`;
+        if (i < count - 1) pages += `<div style="page-break-after: always;"></div>`;
+    }
+
+    printWin.document.write(`<!DOCTYPE html><html><head><meta charset="UTF-8"><title>绘创前程 · 打印底稿</title>
+        <style>
+            body { margin: 0; padding: 20px; font-family: system-ui, sans-serif; }
+            .print-page { max-width: 600px; margin: 20px auto; text-align: center; }
+            svg { max-width: 100%; }
+            @media print {
+                body { padding: 0; }
+                .print-page { max-width: none; margin: 0; padding: 40px; }
+                .no-print { display: none; }
+            }
+        </style>
+    </head><body>
+        <div class="no-print" style="text-align:center; margin-bottom:20px;">
+            <button onclick="window.print()" style="padding:12px 30px; font-size:1rem; background:#4E8D7C; color:#fff; border:none; border-radius:8px; cursor:pointer;">
+                点击打印 (${count}张)
+            </button>
+        </div>
+        ${pages}
+    </body></html>`);
+    printWin.document.close();
+    showToast(`已打开打印预览 (${count}张)`, "success");
+}
+
+// 照片预览
+function previewUploadPhoto(input) {
+    if (!input.files || !input.files[0]) return;
+    const file = input.files[0];
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        const preview = document.getElementById("upload-preview");
+        if (preview) {
+            preview.innerHTML = `
+                <img src="${e.target.result}" style="max-width:250px; max-height:250px; border-radius:12px; border:2px solid var(--primary-300);">
+                <div style="margin-top:8px;">
+                    <button onclick="document.getElementById('photo-input').click()" style="background:none; border:none; color:var(--primary-500); font-size:0.85rem; cursor:pointer;">重新选择</button>
+                </div>
+            `;
+        }
+    };
+    reader.readAsDataURL(file);
+}
+
+// 上传作品
+async function doUploadWork() {
+    const fileInput = document.getElementById("photo-input");
+    const title = document.getElementById("work-title")?.value?.trim();
+
+    if (!fileInput?.files?.length) {
+        return showToast("请先拍照或选择一张照片", "error");
+    }
+    if (!title) {
+        return showToast("请给作品起个名字", "error");
+    }
+
+    const formData = new FormData();
+    formData.append("image", fileInput.files[0]);
+    formData.append("title", title);
+    formData.append("description", document.getElementById("work-desc")?.value || "");
+
+    const contourId = document.getElementById("work-contour-id")?.value;
+    if (contourId) formData.append("contour_id", contourId);
+
+    try {
+        const headers = {};
+        const token = APP.childToken;
+        if (token) headers["Authorization"] = `Bearer ${token}`;
+
+        const resp = await fetch("/api/works/upload", {
+            method: "POST",
+            headers,
+            body: formData,
+        });
+
+        let json;
+        try { json = await resp.json(); } catch { json = {}; }
+
+        if (!resp.ok) {
+            throw new Error(json.detail || "上传失败，请重试");
+        }
+
+        showToast("作品上传成功！", "success");
+        navigate("gallery");
+    } catch (e) {
+        showToast(e.message, "error");
+    }
+}
+
 // ============================================================
 // 工具函数
 // ============================================================
@@ -620,7 +1060,7 @@ function showToast(msg, type = "info") {
     }
     toast.textContent = msg;
     toast.className = `toast ${type} show`;
-    setTimeout(() => toast.classList.remove("show"), 2500);
+    setTimeout(() => toast.classList.remove("show"), 4000);
 }
 
 // ============================================================

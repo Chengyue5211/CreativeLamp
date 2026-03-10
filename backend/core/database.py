@@ -132,7 +132,10 @@ CREATE TABLE IF NOT EXISTS task_templates (
     description TEXT,
     task_type TEXT NOT NULL CHECK(task_type IN (
         'identify', 'imitate', 'complete', 'transfer', 'create',
-        'contour_decorate', 'expand', 'transform', 'generate'
+        'contour_decorate', 'expand',
+        'single_transform', 'double_join', 'multi_generate',
+        'theme_generate', 'series_generate',
+        'detail_increase', 'accessory_increase'
     )),
     difficulty_level INTEGER DEFAULT 1 CHECK(difficulty_level BETWEEN 1 AND 9),
     prototype_ids_json TEXT,     -- JSON: 涉及的原型ID列表
