@@ -3,6 +3,7 @@ from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 
+from core.database import get_db
 from core.security import get_current_user
 from services.training_service import (
     generate_daily_task, get_today_tasks, get_task_detail,
@@ -113,3 +114,72 @@ async def api_update_task_status(
         return update_task_status(task_id, user["user_id"], status)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/history")
+async def api_task_history(
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=50),
+    user: dict = Depends(get_current_user),
+):
+    """获取任务历史记录"""
+    child_id = user["user_id"]
+    offset = (page - 1) * limit
+
+    with get_db() as conn:
+        total = conn.execute(
+            "SELECT COUNT(*) as cnt FROM tasks WHERE child_id = ?",
+            (child_id,),
+        ).fetchone()["cnt"]
+
+        rows = conn.execute(
+            """SELECT t.id, t.status, t.assigned_at, t.submitted_at, t.evaluated_at,
+                      tt.title, tt.module, tt.task_type, tt.description
+               FROM tasks t
+               JOIN task_templates tt ON t.template_id = tt.id
+               WHERE t.child_id = ?
+               ORDER BY t.assigned_at DESC
+               LIMIT ? OFFSET ?""",
+            (child_id, limit, offset),
+        ).fetchall()
+
+        # 获取每个任务的关联作品
+        task_ids = [r["id"] for r in rows]
+        works_map = {}
+        if task_ids:
+            placeholders = ",".join("?" * len(task_ids))
+            works = conn.execute(
+                f"""SELECT task_id, id, title, thumbnail_path, image_path
+                    FROM works WHERE task_id IN ({placeholders})""",
+                task_ids,
+            ).fetchall()
+            for w in works:
+                tid = w["task_id"]
+                if tid not in works_map:
+                    works_map[tid] = []
+                works_map[tid].append({
+                    "id": w["id"],
+                    "title": w["title"],
+                    "thumbnail_path": w["thumbnail_path"] or w["image_path"],
+                })
+
+    return {
+        "tasks": [
+            {
+                "id": r["id"],
+                "title": r["title"],
+                "module": r["module"],
+                "task_type": r["task_type"],
+                "description": r["description"],
+                "status": r["status"],
+                "assigned_at": r["assigned_at"],
+                "submitted_at": r["submitted_at"],
+                "evaluated_at": r["evaluated_at"],
+                "works": works_map.get(r["id"], []),
+            }
+            for r in rows
+        ],
+        "total": total,
+        "page": page,
+        "pages": (total + limit - 1) // limit,
+    }

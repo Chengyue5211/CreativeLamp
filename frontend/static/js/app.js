@@ -86,6 +86,7 @@ function navigate(page, params = {}) {
         case "upload-work": renderUploadWork(container, params); break;
         case "growth": renderGrowth(container, params); break;
         case "work-detail": renderWorkDetail(container, params); break;
+        case "task-history": renderTaskHistory(container, params); break;
         default: renderLogin(container);
     }
 }
@@ -310,7 +311,10 @@ async function renderChildHome(container) {
                 <!-- 今日训练 -->
                 <div class="section-title" style="display:flex; justify-content:space-between; align-items:center;">
                     <span>今日训练</span>
-                    ${totalToday > 0 ? `<span style="font-size:0.75rem; color:var(--primary-500);">${completedToday}/${totalToday} 完成</span>` : ''}
+                    <div style="display:flex; gap:12px; align-items:center;">
+                        ${totalToday > 0 ? `<span style="font-size:0.75rem; color:var(--primary-500);">${completedToday}/${totalToday}</span>` : ''}
+                        <span onclick="navigate('task-history')" style="font-size:0.75rem; color:var(--gray-400); cursor:pointer;">历史 ›</span>
+                    </div>
                 </div>
                 ${tasks.length > 0 ? tasks.map(t => renderTaskCard(t)).join("") : `
                     <div class="card" style="text-align:center; padding:30px;">
@@ -1143,6 +1147,78 @@ async function renderGrowth(container) {
         showToast(e.message, "error");
     }
 }
+
+// ============================================================
+// 任务历史页面
+// ============================================================
+async function renderTaskHistory(container) {
+    try {
+        const resp = await API.request("GET", "/training/history", null, true);
+        const tasks = resp.tasks || [];
+        const child = APP.currentChild || {};
+
+        const statusMap = { assigned: "待开始", in_progress: "进行中", submitted: "已提交", evaluated: "已评价" };
+        const statusColor = { assigned: "#8C99A5", in_progress: "#856404", submitted: "#0C5460", evaluated: "#155724" };
+        const statusBg = { assigned: "#F0F0F0", in_progress: "#FFF3CD", submitted: "#D1ECF1", evaluated: "#D4EDDA" };
+
+        container.innerHTML = `
+            <div class="header">
+                <h1>训练记录</h1>
+                <div class="header-subtitle">共 ${resp.total} 个任务</div>
+                <div class="header-actions">
+                    <button onclick="navigate('child-home')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
+                </div>
+            </div>
+            <div class="page">
+                ${tasks.length > 0 ? tasks.map(t => `
+                    <div class="card" style="border-left:4px solid ${t.module === 'A' ? 'var(--primary-500)' : 'var(--accent-500)'}; cursor:pointer;" onclick="navigate('task-detail', {taskId:${t.id}})">
+                        <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+                            <div style="flex:1;">
+                                <div style="display:flex; align-items:center; gap:6px; margin-bottom:4px;">
+                                    <span style="font-size:0.68rem; background:${t.module === 'A' ? 'var(--primary-50)' : 'var(--accent-50)'}; color:${t.module === 'A' ? 'var(--primary-600)' : 'var(--accent-600)'}; padding:1px 8px; border-radius:10px; font-weight:600;">
+                                        ${t.module === 'A' ? '原型组合' : '图形变形'}
+                                    </span>
+                                    <span style="font-size:0.68rem; background:${statusBg[t.status]}; color:${statusColor[t.status]}; padding:1px 8px; border-radius:10px;">
+                                        ${statusMap[t.status]}
+                                    </span>
+                                </div>
+                                <div style="font-weight:700; font-size:0.95rem;">${escapeHtml(t.title)}</div>
+                                <div style="font-size:0.78rem; color:var(--gray-500); margin-top:2px;">${escapeHtml(t.description || '').slice(0, 50)}${(t.description || '').length > 50 ? '...' : ''}</div>
+                                <div style="font-size:0.7rem; color:var(--gray-400); margin-top:4px;">${escapeHtml(t.assigned_at || '')}</div>
+                            </div>
+                            ${t.works.length > 0 ? `
+                                <div style="flex-shrink:0; margin-left:10px;">
+                                    <div style="width:50px; height:50px; border-radius:8px; overflow:hidden; background:#F5F5F5;">
+                                        ${t.works[0].thumbnail_path ? `<img src="${escapeHtml(t.works[0].thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` : ''}
+                                    </div>
+                                    ${t.works.length > 1 ? `<div style="font-size:0.65rem; color:var(--gray-400); text-align:center; margin-top:2px;">+${t.works.length}</div>` : ''}
+                                </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `).join('') : `
+                    <div style="text-align:center; padding:40px;">
+                        <div style="font-size:3rem; margin-bottom:12px;">📝</div>
+                        <p style="color:var(--gray-500);">还没有训练记录</p>
+                        <button class="btn btn-primary" onclick="navigate('child-home')" style="margin-top:16px;">
+                            去开始训练
+                        </button>
+                    </div>
+                `}
+            </div>
+
+            <div class="tab-bar">
+                <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item" onclick="navigate('growth')"><span class="tab-icon">📊</span>成长</button>
+            </div>
+        `;
+    } catch (e) {
+        showToast(e.message, "error");
+    }
+}
+
 
 // ============================================================
 // 作品详情页面 — 查看/评价/分享
