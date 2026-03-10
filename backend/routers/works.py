@@ -1,13 +1,16 @@
 """
-作品系统路由 — 上传/列表/详情
+作品系统路由 — 上传/列表/详情/评价
 """
+import json
 import os
 import uuid
 import shutil
 from datetime import datetime
+from typing import Optional
 
-from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException
+from fastapi import APIRouter, UploadFile, File, Form, Depends, HTTPException, Query
 from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
 
 from core.database import get_db
 from core.security import get_current_user
@@ -140,20 +143,69 @@ async def get_work_detail(
     current_user: dict = Depends(get_current_user),
 ):
     """获取作品详情"""
-    child_id = current_user["user_id"]
+    user_id = current_user["user_id"]
+    role = current_user.get("role", "child")
 
     with get_db() as conn:
-        work = conn.execute(
-            """SELECT w.*, wm.prototype_tags_json, wm.transform_tags_json,
-                      wm.increase_types_json, wm.series_name, wm.module
-               FROM works w
-               LEFT JOIN work_metadata wm ON w.id = wm.work_id
-               WHERE w.id = ? AND w.child_id = ?""",
-            (work_id, child_id),
-        ).fetchone()
+        if role == "parent":
+            # 家长可以查看自己孩子的作品
+            work = conn.execute(
+                """SELECT w.*, wm.prototype_tags_json, wm.transform_tags_json,
+                          wm.increase_types_json, wm.series_name, wm.module
+                   FROM works w
+                   LEFT JOIN work_metadata wm ON w.id = wm.work_id
+                   JOIN user_relations ur ON w.child_id = ur.child_id
+                   WHERE w.id = ? AND ur.parent_id = ? AND ur.is_active = 1""",
+                (work_id, user_id),
+            ).fetchone()
+        else:
+            work = conn.execute(
+                """SELECT w.*, wm.prototype_tags_json, wm.transform_tags_json,
+                          wm.increase_types_json, wm.series_name, wm.module
+                   FROM works w
+                   LEFT JOIN work_metadata wm ON w.id = wm.work_id
+                   WHERE w.id = ? AND w.child_id = ?""",
+                (work_id, user_id),
+            ).fetchone()
 
     if not work:
         raise HTTPException(status_code=404, detail="作品不存在")
+
+    # 获取关联任务信息
+    task_info = None
+    if work["task_id"]:
+        with get_db() as conn2:
+            task = conn2.execute(
+                """SELECT t.id, t.status, tt.title, tt.module, tt.task_type,
+                          tt.instruction, tt.requirement_json
+                   FROM tasks t
+                   JOIN task_templates tt ON t.template_id = tt.id
+                   WHERE t.id = ?""",
+                (work["task_id"],),
+            ).fetchone()
+            if task:
+                task_info = {
+                    "id": task["id"],
+                    "title": task["title"],
+                    "module": task["module"],
+                    "task_type": task["task_type"],
+                    "instruction": task["instruction"],
+                    "status": task["status"],
+                }
+
+    # 解析metadata JSON
+    prototype_tags = []
+    transform_tags = []
+    increase_types = []
+    try:
+        if work["prototype_tags_json"]:
+            prototype_tags = json.loads(work["prototype_tags_json"])
+        if work["transform_tags_json"]:
+            transform_tags = json.loads(work["transform_tags_json"])
+        if work["increase_types_json"]:
+            increase_types = json.loads(work["increase_types_json"])
+    except (json.JSONDecodeError, TypeError):
+        pass
 
     return {
         "id": work["id"],
@@ -166,7 +218,126 @@ async def get_work_detail(
         "created_at": work["created_at"],
         "module": work["module"],
         "series_name": work["series_name"],
-        "ai_score_originality": work["ai_score_originality"],
-        "ai_score_detail": work["ai_score_detail"],
-        "ai_feedback": work["ai_feedback"],
+        "prototype_tags": prototype_tags,
+        "transform_tags": transform_tags,
+        "increase_types": increase_types,
+        "task": task_info,
+        "evaluation": {
+            "originality": work["ai_score_originality"],
+            "detail": work["ai_score_detail"],
+            "composition": work["ai_score_composition"],
+            "expression": work["ai_score_expression"],
+            "feedback": work["ai_feedback"],
+            "evaluated_at": work["ai_evaluated_at"],
+        } if work["ai_score_originality"] is not None else None,
     }
+
+
+class EvaluationRequest(BaseModel):
+    originality: float = Field(..., ge=0, le=10, description="原创性 0-10")
+    detail: float = Field(..., ge=0, le=10, description="细节丰富度 0-10")
+    composition: float = Field(..., ge=0, le=10, description="构图表现 0-10")
+    expression: float = Field(..., ge=0, le=10, description="创意表达 0-10")
+    feedback: str = Field("", max_length=500, description="文字评语")
+
+
+@router.post("/{work_id}/evaluate")
+async def evaluate_work(
+    work_id: int,
+    req: EvaluationRequest,
+    current_user: dict = Depends(get_current_user),
+):
+    """评价作品（家长或孩子自评）"""
+    user_id = current_user["user_id"]
+
+    with get_db() as conn:
+        # 验证权限：自己的作品 或 家长对孩子作品
+        work = conn.execute(
+            "SELECT child_id FROM works WHERE id = ?", (work_id,)
+        ).fetchone()
+        if not work:
+            raise HTTPException(status_code=404, detail="作品不存在")
+
+        child_id = work["child_id"]
+        if child_id != user_id:
+            # 检查是否为该孩子的家长
+            rel = conn.execute(
+                "SELECT id FROM user_relations WHERE parent_id = ? AND child_id = ? AND is_active = 1",
+                (user_id, child_id),
+            ).fetchone()
+            if not rel:
+                raise HTTPException(status_code=403, detail="无权评价该作品")
+
+        conn.execute(
+            """UPDATE works SET
+               ai_score_originality = ?, ai_score_detail = ?,
+               ai_score_composition = ?, ai_score_expression = ?,
+               ai_feedback = ?, ai_evaluated_at = datetime('now'),
+               updated_at = datetime('now')
+               WHERE id = ?""",
+            (req.originality, req.detail, req.composition, req.expression,
+             req.feedback, work_id),
+        )
+
+        # 如果关联了任务，更新任务状态为 evaluated
+        task_row = conn.execute(
+            "SELECT task_id FROM works WHERE id = ?", (work_id,)
+        ).fetchone()
+        if task_row and task_row["task_id"]:
+            conn.execute(
+                "UPDATE tasks SET status = 'evaluated', evaluated_at = datetime('now') WHERE id = ? AND status = 'submitted'",
+                (task_row["task_id"],),
+            )
+
+    avg_score = round((req.originality + req.detail + req.composition + req.expression) / 4, 1)
+
+    return {
+        "work_id": work_id,
+        "scores": {
+            "originality": req.originality,
+            "detail": req.detail,
+            "composition": req.composition,
+            "expression": req.expression,
+            "average": avg_score,
+        },
+        "feedback": req.feedback,
+        "message": "评价成功！",
+    }
+
+
+@router.put("/{work_id}/edit")
+async def edit_work(
+    work_id: int,
+    title: str = Form(None),
+    description: str = Form(None),
+    current_user: dict = Depends(get_current_user),
+):
+    """编辑作品标题和描述"""
+    child_id = current_user["user_id"]
+
+    with get_db() as conn:
+        work = conn.execute(
+            "SELECT id FROM works WHERE id = ? AND child_id = ?",
+            (work_id, child_id),
+        ).fetchone()
+        if not work:
+            raise HTTPException(status_code=404, detail="作品不存在")
+
+        updates = []
+        params = []
+        if title is not None:
+            updates.append("title = ?")
+            params.append(title[:100])
+        if description is not None:
+            updates.append("description = ?")
+            params.append(description[:500])
+
+        if updates:
+            updates.append("updated_at = datetime('now')")
+            params.append(work_id)
+            conn.execute(
+                f"UPDATE works SET {', '.join(updates)} WHERE id = ?",
+                tuple(params),
+            )
+
+    return {"work_id": work_id, "message": "修改成功"}

@@ -56,6 +56,10 @@ const API = {
     getTodayTasks: () => API.request("GET", "/training/today", null, true),
     getTaskDetail: (id) => API.request("GET", `/training/task/${id}`, null, true),
     updateTaskStatus: (id, status) => API.request("POST", `/training/task/${id}/status?status=${status}`, null, true),
+
+    // 作品
+    getWorkDetail: (id) => API.request("GET", `/works/${id}`, null, true),
+    evaluateWork: (id, data) => API.request("POST", `/works/${id}/evaluate`, data, true),
 };
 
 // ============================================================
@@ -81,6 +85,7 @@ function navigate(page, params = {}) {
         case "print-preview": renderPrintPreview(container, params); break;
         case "upload-work": renderUploadWork(container, params); break;
         case "growth": renderGrowth(container, params); break;
+        case "work-detail": renderWorkDetail(container, params); break;
         default: renderLogin(container);
     }
 }
@@ -827,7 +832,7 @@ async function renderGallery(container) {
                 ${works.length > 0 ? `
                     <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
                         ${works.map(w => `
-                            <div class="card" style="padding:0; overflow:hidden;">
+                            <div class="card" style="padding:0; overflow:hidden; cursor:pointer;" onclick="navigate('work-detail', {workId:${w.id}})">
                                 <div style="height:140px; background:#F5F5F5; display:flex; align-items:center; justify-content:center;">
                                     ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` :
                                       `<div style="font-size:3rem;">🎨</div>`}
@@ -835,6 +840,7 @@ async function renderGallery(container) {
                                 <div style="padding:10px;">
                                     <div style="font-weight:600; font-size:0.85rem;">${escapeHtml(w.title || '无题')}</div>
                                     <div style="font-size:0.7rem; color:var(--gray-400); margin-top:2px;">${escapeHtml(w.created_at || '')}</div>
+                                    ${w.source_type === 'task' ? '<span style="font-size:0.65rem; background:#E8F5F1; color:#4E8D7C; padding:1px 6px; border-radius:8px;">任务作品</span>' : ''}
                                 </div>
                             </div>
                         `).join("")}
@@ -982,6 +988,156 @@ async function renderGrowth(container) {
 }
 
 // ============================================================
+// 作品详情页面 — 查看/评价/分享
+// ============================================================
+async function renderWorkDetail(container, params) {
+    try {
+        const work = await API.getWorkDetail(params.workId);
+        const child = APP.currentChild || {};
+        const hasEval = work.evaluation && work.evaluation.originality !== null;
+
+        // 评价维度说明
+        const dims = [
+            { key: "originality", name: "原创性", icon: "💡", desc: "是否有自己的想法", color: "#D98B5F" },
+            { key: "detail", name: "细节丰富度", icon: "🔍", desc: "细节是否丰富多样", color: "#4E8D7C" },
+            { key: "composition", name: "构图表现", icon: "📐", desc: "画面布局是否协调", color: "#89B4D4" },
+            { key: "expression", name: "创意表达", icon: "🎨", desc: "是否传达出想法和情感", color: "#9B6DBF" },
+        ];
+
+        container.innerHTML = `
+            <div class="header" style="background:linear-gradient(135deg, #4E8D7C, #6BAF9C);">
+                <h1>${escapeHtml(work.title || '无题')}</h1>
+                <div class="header-subtitle">${escapeHtml(child.nickname || '')}的作品</div>
+                <div class="header-actions">
+                    <button onclick="navigate('gallery')" style="background:none; border:none; color:#fff; cursor:pointer;">返回</button>
+                </div>
+            </div>
+            <div class="page">
+                <!-- 作品图片 -->
+                <div class="card" style="padding:0; overflow:hidden; margin-bottom:16px;">
+                    <div style="background:#F5F5F5; min-height:200px; display:flex; align-items:center; justify-content:center;">
+                        ${work.image_path
+                            ? `<img src="${escapeHtml(work.image_path)}" style="width:100%; max-height:400px; object-fit:contain;">`
+                            : `<div style="font-size:4rem; padding:40px;">🎨</div>`}
+                    </div>
+                </div>
+
+                <!-- 作品信息 -->
+                <div class="card" style="margin-bottom:12px;">
+                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+                        <div style="font-weight:700; font-size:1.1rem;">${escapeHtml(work.title || '无题')}</div>
+                        <span style="font-size:0.7rem; background:${work.source_type === 'task' ? '#E8F5F1' : '#FFF4EB'}; color:${work.source_type === 'task' ? '#4E8D7C' : '#D98B5F'}; padding:3px 10px; border-radius:12px;">
+                            ${work.source_type === 'task' ? '训练作品' : '自由创作'}
+                        </span>
+                    </div>
+                    ${work.description ? `<p style="color:var(--gray-600); font-size:0.9rem; line-height:1.6;">${escapeHtml(work.description)}</p>` : ''}
+                    <div style="font-size:0.75rem; color:var(--gray-400); margin-top:8px;">${escapeHtml(work.created_at || '')}</div>
+                </div>
+
+                <!-- 关联任务 -->
+                ${work.task ? `
+                    <div class="card" style="background:var(--primary-50); border-color:var(--primary-200); margin-bottom:12px;">
+                        <div class="card-title">📋 来自训练任务</div>
+                        <div style="font-weight:600; font-size:0.9rem; margin-top:4px;">${escapeHtml(work.task.title)}</div>
+                        <div style="font-size:0.8rem; color:var(--gray-500); margin-top:2px;">
+                            ${work.task.module === 'A' ? '模块A · 原型组合' : '模块B · 图形变形'} · ${escapeHtml(work.task.task_type)}
+                        </div>
+                        ${work.task.instruction ? `<p style="font-size:0.82rem; color:var(--primary-700); margin-top:6px;">${escapeHtml(work.task.instruction)}</p>` : ''}
+                    </div>
+                ` : ''}
+
+                <!-- 创作标签 -->
+                ${(work.prototype_tags?.length || work.transform_tags?.length) ? `
+                    <div class="card" style="margin-bottom:12px;">
+                        <div class="card-title">🏷️ 创作元素</div>
+                        <div style="display:flex; flex-wrap:wrap; gap:6px; margin-top:8px;">
+                            ${(work.prototype_tags || []).map(t => `<span style="font-size:0.8rem; background:var(--primary-50); color:var(--primary-600); padding:3px 10px; border-radius:12px;">${escapeHtml(typeof t === 'string' ? t : t.name || t)}</span>`).join('')}
+                            ${(work.transform_tags || []).map(t => `<span style="font-size:0.8rem; background:var(--accent-50); color:var(--accent-600); padding:3px 10px; border-radius:12px;">✨ ${escapeHtml(typeof t === 'string' ? t : t.name || t)}</span>`).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+
+                <!-- 评价区域 -->
+                ${hasEval ? `
+                    <div class="card" style="background:linear-gradient(135deg, #FFF8F0, #FFF4EB); border-color:#E8C090; margin-bottom:12px;">
+                        <div class="card-title">⭐ 作品评价</div>
+                        <div style="margin-top:12px;">
+                            ${dims.map(d => {
+                                const score = work.evaluation[d.key] || 0;
+                                const pct = Math.round(score * 10);
+                                return `
+                                <div style="margin-bottom:10px;">
+                                    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:4px;">
+                                        <span style="font-size:0.85rem; font-weight:600;">${d.icon} ${d.name}</span>
+                                        <span style="font-size:0.9rem; font-weight:700; color:${d.color};">${score}</span>
+                                    </div>
+                                    <div style="background:#E0E0E0; border-radius:6px; height:6px; overflow:hidden;">
+                                        <div style="background:${d.color}; height:100%; width:${pct}%; border-radius:6px; transition:width 0.5s;"></div>
+                                    </div>
+                                </div>`;
+                            }).join('')}
+                        </div>
+                        <div style="text-align:center; margin-top:12px; padding-top:12px; border-top:1px solid #E8D4B8;">
+                            <div style="font-size:2rem; font-weight:800; color:#D98B5F;">
+                                ${((work.evaluation.originality + work.evaluation.detail + work.evaluation.composition + work.evaluation.expression) / 4).toFixed(1)}
+                            </div>
+                            <div style="font-size:0.75rem; color:#B88B60;">综合评分</div>
+                        </div>
+                        ${work.evaluation.feedback ? `
+                            <div style="margin-top:12px; padding:10px; background:#fff; border-radius:10px; font-size:0.88rem; color:var(--gray-700); line-height:1.6;">
+                                💬 ${escapeHtml(work.evaluation.feedback)}
+                            </div>
+                        ` : ''}
+                    </div>
+                ` : `
+                    <div class="card" style="margin-bottom:12px;" id="eval-section">
+                        <div class="card-title">⭐ 给作品打分</div>
+                        <p style="font-size:0.82rem; color:var(--gray-500); margin-bottom:12px;">
+                            从4个维度为这幅作品打分（0-10分）
+                        </p>
+                        ${dims.map(d => `
+                            <div style="margin-bottom:14px;">
+                                <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
+                                    <div>
+                                        <span style="font-weight:600; font-size:0.9rem;">${d.icon} ${d.name}</span>
+                                        <span style="font-size:0.72rem; color:var(--gray-400); margin-left:4px;">${d.desc}</span>
+                                    </div>
+                                    <span id="score-label-${d.key}" style="font-size:1rem; font-weight:700; color:${d.color}; min-width:30px; text-align:right;">5</span>
+                                </div>
+                                <input type="range" id="score-${d.key}" min="0" max="10" step="0.5" value="5"
+                                    oninput="document.getElementById('score-label-${d.key}').textContent = this.value"
+                                    style="width:100%; accent-color:${d.color};">
+                            </div>
+                        `).join('')}
+                        <div class="form-group" style="margin-top:8px;">
+                            <label class="form-label">💬 评语（选填）</label>
+                            <textarea id="eval-feedback" class="form-input" rows="2" placeholder="写一句鼓励的话" style="resize:none;"></textarea>
+                        </div>
+                        <button class="btn btn-primary btn-large" onclick="doEvaluateWork(${work.id})">
+                            提交评价
+                        </button>
+                    </div>
+                `}
+
+                <!-- 操作按钮 -->
+                <div style="display:flex; gap:10px; margin-top:12px;">
+                    <button class="btn btn-outline" onclick="navigate('upload-work', {taskId: ${work.task?.id || 0}})" style="flex:1; font-size:0.85rem;">
+                        📷 再画一幅
+                    </button>
+                    <button class="btn btn-outline" onclick="navigate('gallery')" style="flex:1; font-size:0.85rem;">
+                        🖼️ 回到展馆
+                    </button>
+                </div>
+            </div>
+        `;
+    } catch (e) {
+        showToast(e.message, "error");
+        navigate("gallery");
+    }
+}
+
+
+// ============================================================
 // 操作函数
 // ============================================================
 
@@ -1081,6 +1237,23 @@ async function startTask(taskId) {
     try {
         await API.updateTaskStatus(taskId, "in_progress");
         navigate("task-detail", { taskId });
+    } catch (e) {
+        showToast(e.message, "error");
+    }
+}
+
+// 提交作品评价
+async function doEvaluateWork(workId) {
+    const originality = parseFloat(document.getElementById("score-originality")?.value || 5);
+    const detail = parseFloat(document.getElementById("score-detail")?.value || 5);
+    const composition = parseFloat(document.getElementById("score-composition")?.value || 5);
+    const expression = parseFloat(document.getElementById("score-expression")?.value || 5);
+    const feedback = document.getElementById("eval-feedback")?.value?.trim() || "";
+
+    try {
+        await API.evaluateWork(workId, { originality, detail, composition, expression, feedback });
+        showToast("评价成功！", "success");
+        navigate("work-detail", { workId });
     } catch (e) {
         showToast(e.message, "error");
     }
