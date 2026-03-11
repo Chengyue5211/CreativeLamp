@@ -636,3 +636,42 @@ input[type="range"]::-webkit-slider-thumb {
         padding-bottom: calc(80px + env(safe-area-inset-bottom));
     }
 }
+
+/* === Accessibility === */
+
+/* Focus indicators for all interactive elements */
+a:focus-visible,
+button:focus-visible,
+.btn:focus-visible,
+.card:focus-visible,
+[onclick]:focus-visible,
+[tabindex]:focus-visible {
+    outline: 2px solid var(--primary-500);
+    outline-offset: 2px;
+}
+
+/* Skip link for keyboard navigation */
+.skip-link {
+    position: absolute;
+    top: -40px;
+    left: 0;
+    background: var(--primary-500);
+    color: #fff;
+    padding: 8px 16px;
+    z-index: 10000;
+    transition: top 0.2s;
+}
+.skip-link:focus {
+    top: 0;
+}
+
+/* Improve color contrast for gray text */
+.card-subtitle {
+    color: var(--gray-600) !important;
+}
+.tab-item {
+    color: var(--gray-600) !important;
+}
+.tab-item.active {
+    color: var(--primary-500) !important;
+}

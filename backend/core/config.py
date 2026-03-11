@@ -30,6 +30,13 @@ CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
 MAX_UPLOAD_SIZE_MB = 10
 ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
 
+# 生产环境必需的环境变量校验
+if IS_PROD:
+    _required = ["HC_SECRET_KEY"]
+    _missing = [v for v in _required if not os.getenv(v)]
+    if _missing:
+        raise RuntimeError(f"Production requires env vars: {', '.join(_missing)}")
+
 # 创建必要目录
 for d in [DATA_DIR, UPLOAD_DIR, THUMBNAIL_DIR, PRINTABLE_DIR, MERCH_PREVIEW_DIR]:
     d.mkdir(parents=True, exist_ok=True)

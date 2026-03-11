@@ -10,7 +10,7 @@
 """
 import json
 import random
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional
 
 from core.database import get_db
@@ -174,7 +174,7 @@ def generate_daily_task(child_id: int) -> dict:
     task_b = _generate_module_b_task(child_id, config["module_b"], age)
 
     with get_db() as conn:
-        today = datetime.now().strftime("%Y-%m-%d")
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         existing = conn.execute(
             "SELECT id FROM tasks WHERE child_id = ? AND date(assigned_at) = ?",
             (child_id, today)
@@ -205,7 +205,7 @@ def generate_daily_task(child_id: int) -> dict:
 
 def get_today_tasks(child_id: int) -> dict:
     """获取今天的任务"""
-    today = datetime.now().strftime("%Y-%m-%d")
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
     with get_db() as conn:
         child = conn.execute(
             "SELECT nickname, level_grade FROM users WHERE id = ?", (child_id,)

@@ -115,7 +115,7 @@ function renderLogin(container) {
             </div>
             <button class="btn btn-primary btn-large" onclick="doLogin()">登录</button>
             <div style="text-align:center; margin-top:16px;">
-                <a href="javascript:navigate('register')" style="color:var(--primary-500); font-size:0.9rem;">还没有账号？立即注册</a>
+                <a href="#" onclick="event.preventDefault(); navigate('register')" style="color:var(--primary-500); font-size:0.9rem;">还没有账号？立即注册</a>
             </div>
         </div>
     `;
@@ -142,7 +142,7 @@ function renderRegister(container) {
             </div>
             <button class="btn btn-primary btn-large" onclick="doRegister()">注册</button>
             <div style="text-align:center; margin-top:16px;">
-                <a href="javascript:navigate('login')" style="color:var(--primary-500); font-size:0.9rem;">已有账号？去登录</a>
+                <a href="#" onclick="event.preventDefault(); navigate('login')" style="color:var(--primary-500); font-size:0.9rem;">已有账号？去登录</a>
             </div>
         </div>
     `;
@@ -207,7 +207,7 @@ async function renderParentHome(container) {
                         ${dc.latest_work ? `
                             <div style="margin-top:10px; padding-top:10px; border-top:1px solid var(--gray-100); display:flex; align-items:center; gap:10px;">
                                 <div style="width:40px; height:40px; border-radius:8px; overflow:hidden; background:#F5F5F5; flex-shrink:0;">
-                                    ${dc.latest_work.thumbnail_path ? `<img src="${escapeHtml(dc.latest_work.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` : ''}
+                                    ${dc.latest_work.thumbnail_path ? `<img src="${escapeHtml(dc.latest_work.thumbnail_path)}" alt="作品缩略图" style="width:100%; height:100%; object-fit:cover;">` : ''}
                                 </div>
                                 <div style="flex:1; font-size:0.8rem; color:var(--gray-600);">最新: ${escapeHtml(dc.latest_work.title || '无题')}</div>
                                 <button onclick="event.stopPropagation(); navigate('parent-child-works', {childId:${child.id}, childName:'${escapeJsString(child.nickname)}'})" style="font-size:0.75rem; color:var(--primary-500); background:none; border:1px solid var(--primary-300); padding:3px 10px; border-radius:8px; cursor:pointer;">
@@ -402,10 +402,10 @@ async function renderChildHome(container) {
             </div>
 
             <div class="tab-bar">
-                <button class="tab-item active"><span class="tab-icon">🏠</span>首页</button>
-                <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
-                <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
-                <button class="tab-item" onclick="navigate('growth')"><span class="tab-icon">📊</span>成长</button>
+                <button class="tab-item active" aria-label="首页"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item" onclick="navigate('contours')" aria-label="图形库"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item" onclick="navigate('gallery')" aria-label="展馆"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item" onclick="navigate('growth')" aria-label="成长"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
     } catch (e) {
@@ -508,7 +508,7 @@ async function renderTaskDetail(container, params) {
                     <div class="card" style="background:linear-gradient(135deg, #FFF8F0, #FFF4EB); border-color:#E8C090; text-align:center;">
                         <div class="card-title">📋 推荐的图形底稿</div>
                         <div style="background:#fff; border-radius:12px; padding:12px; margin:8px 0;">
-                            <img src="/api/contours/image/${encodeURIComponent(task.requirement.recommended_contour.image || task.requirement.recommended_contour.id + '.png')}" style="max-width:200px; max-height:200px; object-fit:contain;" loading="lazy">
+                            <img src="/api/contours/image/${encodeURIComponent(task.requirement.recommended_contour.image || task.requirement.recommended_contour.id + '.png')}" alt="${escapeHtml(task.requirement.recommended_contour.name || '轮廓图形')}" style="max-width:200px; max-height:200px; object-fit:contain;" loading="lazy">
                         </div>
                         <div style="font-weight:700; font-size:1rem; margin:4px 0;">${escapeHtml(task.requirement.recommended_contour.name)}</div>
                         <button class="btn btn-primary" onclick="navigate('print-preview', {contourId:'${task.requirement.recommended_contour.id}'})" style="margin-top:8px;">
@@ -770,7 +770,7 @@ async function renderContourLibrary(container) {
                              onclick="navigate('print-preview', {contourId:'${item.id}'})">
                             <div style="background:${catInfo.color}; border-radius:12px; padding:6px; margin-bottom:8px; min-height:120px; display:flex; align-items:center; justify-content:center;">
                                 ${item.image_url
-                                    ? `<img src="${escapeHtml(item.image_url)}" style="max-width:100%; max-height:140px; object-fit:contain;" loading="lazy">`
+                                    ? `<img src="${escapeHtml(item.image_url)}" alt="${escapeHtml(item.name_zh || item.name || '轮廓图形')}" style="max-width:100%; max-height:140px; object-fit:contain;" loading="lazy">`
                                     : (typeof ContourSVG !== 'undefined' ? ContourSVG.generate(item.id) : `<div style="font-size:2rem;">🎨</div>`)}
                             </div>
                             <div style="font-weight:700; font-size:0.95rem;">${escapeHtml(item.name)}</div>
@@ -793,10 +793,10 @@ async function renderContourLibrary(container) {
             </div>
 
             <div class="tab-bar">
-                <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
-                <button class="tab-item active"><span class="tab-icon">🎨</span>图形库</button>
-                <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
-                <button class="tab-item" onclick="navigate('growth')"><span class="tab-icon">📊</span>成长</button>
+                <button class="tab-item" onclick="navigate('child-home')" aria-label="首页"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item active" aria-label="图形库"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item" onclick="navigate('gallery')" aria-label="展馆"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item" onclick="navigate('growth')" aria-label="成长"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
     }
@@ -857,7 +857,7 @@ async function renderPrintPreview(container, params) {
                         绘创前程 · ${escapeHtml(item.name)} · ${escapeHtml(child.nickname || '')}
                     </div>
                     <div style="display:flex; justify-content:center;">
-                        <img src="${escapeHtml(imageUrl)}" style="max-width:100%; max-height:350px; object-fit:contain;" loading="lazy">
+                        <img src="${escapeHtml(imageUrl)}" alt="打印预览" style="max-width:100%; max-height:350px; object-fit:contain;" loading="lazy">
                     </div>
                     <div style="margin-top:12px; display:flex; justify-content:space-between; font-size:0.75rem; color:#BBB;">
                         <span>姓名：____________</span>
@@ -969,7 +969,7 @@ async function renderGallery(container) {
                         ${works.map(w => `
                             <div class="card" style="padding:0; overflow:hidden; cursor:pointer;" onclick="navigate('work-detail', {workId:${w.id}})">
                                 <div style="height:140px; background:#F5F5F5; display:flex; align-items:center; justify-content:center;">
-                                    ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` :
+                                    ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" alt="作品缩略图" style="width:100%; height:100%; object-fit:cover;">` :
                                       `<div style="font-size:3rem;">🎨</div>`}
                                 </div>
                                 <div style="padding:10px;">
@@ -1001,10 +1001,10 @@ async function renderGallery(container) {
             </div>
 
             <div class="tab-bar">
-                <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
-                <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
-                <button class="tab-item active"><span class="tab-icon">🖼️</span>展馆</button>
-                <button class="tab-item" onclick="navigate('growth')"><span class="tab-icon">📊</span>成长</button>
+                <button class="tab-item" onclick="navigate('child-home')" aria-label="首页"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item" onclick="navigate('contours')" aria-label="图形库"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item active" aria-label="展馆"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item" onclick="navigate('growth')" aria-label="成长"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
     } catch (e) {
@@ -1096,7 +1096,7 @@ async function renderGrowth(container) {
                         <div class="card-title">🏆 最佳作品</div>
                         <div style="display:flex; align-items:center; gap:12px; margin-top:8px;">
                             <div style="width:60px; height:60px; border-radius:10px; overflow:hidden; background:#F5F5F5; flex-shrink:0;">
-                                ${bestWork.thumbnail_path ? `<img src="${escapeHtml(bestWork.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.5rem;">🎨</div>'}
+                                ${bestWork.thumbnail_path ? `<img src="${escapeHtml(bestWork.thumbnail_path)}" alt="作品缩略图" style="width:100%; height:100%; object-fit:cover;">` : '<div style="display:flex;align-items:center;justify-content:center;height:100%;font-size:1.5rem;">🎨</div>'}
                             </div>
                             <div>
                                 <div style="font-weight:700; font-size:1rem;">${escapeHtml(bestWork.title)}</div>
@@ -1155,7 +1155,7 @@ async function renderGrowth(container) {
                     <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
                         ${recentWorks.map(w => `
                             <div style="background:#F5F5F5; border-radius:10px; overflow:hidden; aspect-ratio:1; cursor:pointer;" onclick="navigate('work-detail', {workId:${w.id}})">
-                                ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` :
+                                ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" alt="作品缩略图" style="width:100%; height:100%; object-fit:cover;">` :
                                   `<div style="width:100%; height:100%; display:flex; align-items:center; justify-content:center; font-size:2rem;">🎨</div>`}
                             </div>
                         `).join("")}
@@ -1188,10 +1188,10 @@ async function renderGrowth(container) {
             </div>
 
             <div class="tab-bar">
-                <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
-                <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
-                <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
-                <button class="tab-item active"><span class="tab-icon">📊</span>成长</button>
+                <button class="tab-item" onclick="navigate('child-home')" aria-label="首页"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item" onclick="navigate('contours')" aria-label="图形库"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item" onclick="navigate('gallery')" aria-label="展馆"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item active" aria-label="成长"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
     } catch (e) {
@@ -1240,7 +1240,7 @@ async function renderTaskHistory(container) {
                             ${t.works.length > 0 ? `
                                 <div style="flex-shrink:0; margin-left:10px;">
                                     <div style="width:50px; height:50px; border-radius:8px; overflow:hidden; background:#F5F5F5;">
-                                        ${t.works[0].thumbnail_path ? `<img src="${escapeHtml(t.works[0].thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` : ''}
+                                        ${t.works[0].thumbnail_path ? `<img src="${escapeHtml(t.works[0].thumbnail_path)}" alt="作品缩略图" style="width:100%; height:100%; object-fit:cover;">` : ''}
                                     </div>
                                     ${t.works.length > 1 ? `<div style="font-size:0.65rem; color:var(--gray-400); text-align:center; margin-top:2px;">+${t.works.length}</div>` : ''}
                                 </div>
@@ -1259,10 +1259,10 @@ async function renderTaskHistory(container) {
             </div>
 
             <div class="tab-bar">
-                <button class="tab-item" onclick="navigate('child-home')"><span class="tab-icon">🏠</span>首页</button>
-                <button class="tab-item" onclick="navigate('contours')"><span class="tab-icon">🎨</span>图形库</button>
-                <button class="tab-item" onclick="navigate('gallery')"><span class="tab-icon">🖼️</span>展馆</button>
-                <button class="tab-item" onclick="navigate('growth')"><span class="tab-icon">📊</span>成长</button>
+                <button class="tab-item" onclick="navigate('child-home')" aria-label="首页"><span class="tab-icon">🏠</span>首页</button>
+                <button class="tab-item" onclick="navigate('contours')" aria-label="图形库"><span class="tab-icon">🎨</span>图形库</button>
+                <button class="tab-item" onclick="navigate('gallery')" aria-label="展馆"><span class="tab-icon">🖼️</span>展馆</button>
+                <button class="tab-item" onclick="navigate('growth')" aria-label="成长"><span class="tab-icon">📊</span>成长</button>
             </div>
         `;
     } catch (e) {
@@ -1295,7 +1295,7 @@ async function renderParentChildWorks(container, params) {
                         ${works.map(w => `
                             <div class="card" style="padding:0; overflow:hidden; cursor:pointer;" onclick="navigate('parent-work-detail', {workId:${w.id}, childId:${childId}, childName:'${escapeJsString(childName)}'})">
                                 <div style="height:130px; background:#F5F5F5; display:flex; align-items:center; justify-content:center;">
-                                    ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" style="width:100%; height:100%; object-fit:cover;">` : `<div style="font-size:2.5rem;">🎨</div>`}
+                                    ${w.thumbnail_path ? `<img src="${escapeHtml(w.thumbnail_path)}" alt="作品缩略图" style="width:100%; height:100%; object-fit:cover;">` : `<div style="font-size:2.5rem;">🎨</div>`}
                                 </div>
                                 <div style="padding:10px;">
                                     <div style="font-weight:600; font-size:0.85rem;">${escapeHtml(w.title || '无题')}</div>
@@ -1354,7 +1354,7 @@ async function renderParentWorkDetail(container, params) {
             <div class="page">
                 <div class="card" style="padding:0; overflow:hidden; margin-bottom:16px;">
                     <div style="background:#F5F5F5; min-height:200px; display:flex; align-items:center; justify-content:center;">
-                        ${work.image_path ? `<img src="${escapeHtml(work.image_path)}" style="width:100%; max-height:400px; object-fit:contain;">` : `<div style="font-size:4rem; padding:40px;">🎨</div>`}
+                        ${work.image_path ? `<img src="${escapeHtml(work.image_path)}" alt="作品预览" style="width:100%; max-height:400px; object-fit:contain;">` : `<div style="font-size:4rem; padding:40px;">🎨</div>`}
                     </div>
                 </div>
 
@@ -1440,7 +1440,7 @@ async function renderWorkDetail(container, params) {
                 <div class="card" style="padding:0; overflow:hidden; margin-bottom:16px;">
                     <div style="background:#F5F5F5; min-height:200px; display:flex; align-items:center; justify-content:center;">
                         ${work.image_path
-                            ? `<img src="${escapeHtml(work.image_path)}" style="width:100%; max-height:400px; object-fit:contain;">`
+                            ? `<img src="${escapeHtml(work.image_path)}" alt="作品预览" style="width:100%; max-height:400px; object-fit:contain;">`
                             : `<div style="font-size:4rem; padding:40px;">🎨</div>`}
                     </div>
                 </div>
@@ -1767,7 +1767,7 @@ function previewUploadPhoto(input) {
         const preview = document.getElementById("upload-preview");
         if (preview) {
             preview.innerHTML = `
-                <img src="${e.target.result}" style="max-width:250px; max-height:250px; border-radius:12px; border:2px solid var(--primary-300);">
+                <img src="${e.target.result}" alt="作品预览" style="max-width:250px; max-height:250px; border-radius:12px; border:2px solid var(--primary-300);">
                 <div style="margin-top:8px;">
                     <button onclick="document.getElementById('photo-input').click()" style="background:none; border:none; color:var(--primary-500); font-size:0.85rem; cursor:pointer;">重新选择</button>
                 </div>

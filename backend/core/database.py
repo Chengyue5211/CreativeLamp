@@ -191,10 +191,10 @@ CREATE TABLE IF NOT EXISTS works (
     evidence_candidate INTEGER DEFAULT 0,    -- 存证候选
     rights_candidate INTEGER DEFAULT 0,      -- 确权候选
     -- AI评估
-    ai_score_originality REAL,    -- 原创性 (0-100)
-    ai_score_detail REAL,         -- 细节丰富度 (0-100)
-    ai_score_composition REAL,    -- 构图能力 (0-100)
-    ai_score_expression REAL,     -- 表达力 (0-100)
+    ai_score_originality REAL DEFAULT 0 CHECK(ai_score_originality BETWEEN 0 AND 10),    -- 原创性 (0-10)
+    ai_score_detail REAL DEFAULT 0 CHECK(ai_score_detail BETWEEN 0 AND 10),              -- 细节丰富度 (0-10)
+    ai_score_composition REAL DEFAULT 0 CHECK(ai_score_composition BETWEEN 0 AND 10),    -- 构图能力 (0-10)
+    ai_score_expression REAL DEFAULT 0 CHECK(ai_score_expression BETWEEN 0 AND 10),      -- 表达力 (0-10)
     ai_feedback TEXT,             -- AI点评文字
     ai_evaluated_at TEXT,
     -- 蚂蚁链存证
@@ -334,4 +334,11 @@ CREATE INDEX IF NOT EXISTS idx_merch_orders_parent ON merch_orders(parent_id);
 CREATE INDEX IF NOT EXISTS idx_merch_orders_status ON merch_orders(status);
 CREATE INDEX IF NOT EXISTS idx_referrals_inviter ON referrals(inviter_id);
 CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(invite_code);
+CREATE INDEX IF NOT EXISTS idx_works_task_id ON works(task_id);
+CREATE INDEX IF NOT EXISTS idx_works_source_type ON works(source_type);
+CREATE INDEX IF NOT EXISTS idx_tasks_template_id ON tasks(template_id);
+CREATE INDEX IF NOT EXISTS idx_task_templates_active ON task_templates(is_active);
+CREATE INDEX IF NOT EXISTS idx_merch_orders_child ON merch_orders(child_id);
+CREATE INDEX IF NOT EXISTS idx_referral_rewards_recipient ON referral_rewards(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_work_metadata_module ON work_metadata(module);
 """

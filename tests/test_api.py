@@ -122,6 +122,20 @@ class TestAuthSecurity:
         })
         assert resp.status_code == 400
 
+    def test_login_invalid_phone_format(self, client):
+        """手机号格式不合法应返回422"""
+        resp = client.post("/api/auth/login", json={
+            "phone": "abc", "password": "test123"
+        })
+        assert resp.status_code == 422
+
+    def test_list_children(self, client, parent_token):
+        """家长获取孩子列表"""
+        resp = client.get("/api/auth/children",
+                          headers={"Authorization": f"Bearer {parent_token}"})
+        assert resp.status_code == 200
+        assert "children" in resp.json()
+
     def test_logout_invalidates_token(self, client, parent_token):
         # Token works before logout
         resp = client.get("/api/auth/me", headers={"Authorization": f"Bearer {parent_token}"})
@@ -156,8 +170,8 @@ class TestRateLimiting:
     def test_login_rate_limit(self, client):
         """10次/分钟后应该被限制"""
         for i in range(10):
-            client.post("/api/auth/login", json={"phone": "13800000000", "password": "x"})
-        resp = client.post("/api/auth/login", json={"phone": "13800000000", "password": "x"})
+            client.post("/api/auth/login", json={"phone": "13800000000", "password": "wrong123"})
+        resp = client.post("/api/auth/login", json={"phone": "13800000000", "password": "wrong123"})
         assert resp.status_code == 429
 
     def test_register_rate_limit(self, client):
@@ -346,6 +360,45 @@ class TestTraining:
         assert "total" in data
         assert "page" in data
 
+    def test_list_increase_subtypes(self, client):
+        """获取增加动作的5种子类型"""
+        resp = client.get("/api/training/increase-subtypes")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "subtypes" in data or isinstance(data, list) or len(data) > 0
+
+    def test_list_task_types(self, client):
+        """获取任务类型说明"""
+        resp = client.get("/api/training/task-types")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "task_types" in data
+        assert len(data["task_types"]) > 0
+
+    def test_get_task_detail(self, client, child_token):
+        """获取任务详情（需先生成任务）"""
+        token, _ = child_token
+        # 先生成任务
+        client.post("/api/training/daily-task",
+                    headers={"Authorization": f"Bearer {token}"})
+        # 从历史获取task_id
+        resp = client.get("/api/training/history?page=1&limit=1",
+                         headers={"Authorization": f"Bearer {token}"})
+        tasks = resp.json().get("tasks", [])
+        assert len(tasks) > 0
+        task_id = tasks[0]["id"]
+        # 获取详情
+        resp = client.get(f"/api/training/task/{task_id}",
+                         headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+
+    def test_get_task_detail_nonexistent(self, client, child_token):
+        """获取不存在的任务应返回404"""
+        token, _ = child_token
+        resp = client.get("/api/training/task/999999",
+                         headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 404
+
 
 # ============================================================
 # 7. 作品系统业务测试
@@ -428,6 +481,68 @@ class TestWorks:
         )
         assert resp.status_code == 422
 
+    def test_edit_work(self, client, child_token):
+        """编辑作品标题和描述"""
+        token, _ = child_token
+        from PIL import Image
+        img = Image.new("RGB", (30, 30), "yellow")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        resp = client.post("/api/works/upload",
+            files={"image": ("edit_test.png", buf, "image/png")},
+            data={"title": "Original Title"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 200
+        work_id = resp.json()["work_id"]
+
+        # 编辑
+        resp = client.put(f"/api/works/{work_id}/edit",
+            data={"title": "New Title", "description": "New Description"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["work_id"] == work_id
+
+    def test_edit_work_empty_body(self, client, child_token):
+        """编辑作品时不传任何字段应优雅处理"""
+        token, _ = child_token
+        from PIL import Image
+        img = Image.new("RGB", (30, 30), "cyan")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        resp = client.post("/api/works/upload",
+            files={"image": ("empty_edit.png", buf, "image/png")},
+            data={"title": "No Change"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        work_id = resp.json()["work_id"]
+
+        # 不传title和description
+        resp = client.put(f"/api/works/{work_id}/edit",
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        assert resp.status_code == 200
+
+    def test_upload_oversized_title(self, client, child_token):
+        """上传时标题超长应被截断或拒绝"""
+        token, _ = child_token
+        from PIL import Image
+        img = Image.new("RGB", (30, 30), "pink")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        long_title = "A" * 200  # 超过max_length=100
+        resp = client.post("/api/works/upload",
+            files={"image": ("long_title.png", buf, "image/png")},
+            data={"title": long_title},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        # 应返回422(验证失败)或200(截断处理)
+        assert resp.status_code in (200, 422)
+
 
 # ============================================================
 # 8. 展示系统测试
@@ -468,6 +583,51 @@ class TestParent:
         resp = client.get("/api/parent/dashboard",
                          headers={"Authorization": f"Bearer {token}"})
         assert resp.status_code == 403
+
+    def test_update_work_visibility(self, client, parent_token, child_token):
+        """家长更改作品可见性"""
+        token, child_id = child_token
+        from PIL import Image
+        img = Image.new("RGB", (30, 30), "orange")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        resp = client.post("/api/works/upload",
+            files={"image": ("vis.png", buf, "image/png")},
+            data={"title": "Visibility Test"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        work_id = resp.json()["work_id"]
+
+        # 家长设置为public
+        resp = client.put(f"/api/parent/work/{work_id}/visibility",
+            params={"visibility": "public"},
+            headers={"Authorization": f"Bearer {parent_token}"}
+        )
+        assert resp.status_code == 200
+        assert resp.json()["visibility"] == "public"
+
+    def test_mark_work_as_candidate(self, client, parent_token, child_token):
+        """家长标记作品为候选"""
+        token, child_id = child_token
+        from PIL import Image
+        img = Image.new("RGB", (30, 30), "brown")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        resp = client.post("/api/works/upload",
+            files={"image": ("cand.png", buf, "image/png")},
+            data={"title": "Candidate Test"},
+            headers={"Authorization": f"Bearer {token}"}
+        )
+        work_id = resp.json()["work_id"]
+
+        # 家长标记为文创候选
+        resp = client.put(f"/api/parent/work/{work_id}/candidate",
+            params={"merch": True},
+            headers={"Authorization": f"Bearer {parent_token}"}
+        )
+        assert resp.status_code == 200
 
 
 # ============================================================

@@ -19,8 +19,8 @@ class RegisterRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    phone: str = Field(..., min_length=1)
-    password: str = Field(..., min_length=1)
+    phone: str = Field(..., pattern=r"^1[3-9]\d{9}$")
+    password: str = Field(..., min_length=6, max_length=32)
 
 
 class AddChildRequest(BaseModel):

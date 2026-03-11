@@ -142,14 +142,11 @@ async def get_child_works(
 @router.put("/work/{work_id}/visibility")
 async def update_work_visibility(
     work_id: int,
-    visibility: str,
+    visibility: str = Query(..., pattern=r"^(private|family|public)$"),
     current_user: dict = Depends(require_parent),
 ):
     """更新作品可见性"""
     parent_id = current_user["user_id"]
-
-    if visibility not in ("private", "family", "public"):
-        raise HTTPException(status_code=400, detail="无效的可见性级别")
 
     with get_db() as conn:
         # 验证家长对该作品的权限

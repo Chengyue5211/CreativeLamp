@@ -24,8 +24,8 @@ router = APIRouter()
 @router.post("/upload")
 async def upload_work(
     image: UploadFile = File(...),
-    title: str = Form("无题"),
-    description: str = Form(""),
+    title: str = Form("无题", max_length=100),
+    description: str = Form("", max_length=500),
     contour_id: str = Form(""),
     task_id: int = Form(0),
     current_user: dict = Depends(get_current_user),
@@ -345,8 +345,8 @@ async def evaluate_work(
 @router.put("/{work_id}/edit")
 async def edit_work(
     work_id: int,
-    title: str = Form(None),
-    description: str = Form(None),
+    title: str = Form(None, max_length=100),
+    description: str = Form(None, max_length=500),
     current_user: dict = Depends(get_current_user),
 ):
     """编辑作品标题和描述"""
@@ -360,21 +360,20 @@ async def edit_work(
         if not work:
             raise HTTPException(status_code=404, detail="作品不存在")
 
-        updates = []
-        params = []
-        if title is not None:
-            updates.append("title = ?")
-            params.append(title[:100])
-        if description is not None:
-            updates.append("description = ?")
-            params.append(description[:500])
-
-        if updates:
-            updates.append("updated_at = datetime('now')")
-            params.append(work_id)
+        if title is not None and description is not None:
             conn.execute(
-                f"UPDATE works SET {', '.join(updates)} WHERE id = ?",
-                tuple(params),
+                "UPDATE works SET title = ?, description = ?, updated_at = datetime('now') WHERE id = ?",
+                (title[:100], description[:500], work_id),
+            )
+        elif title is not None:
+            conn.execute(
+                "UPDATE works SET title = ?, updated_at = datetime('now') WHERE id = ?",
+                (title[:100], work_id),
+            )
+        elif description is not None:
+            conn.execute(
+                "UPDATE works SET description = ?, updated_at = datetime('now') WHERE id = ?",
+                (description[:500], work_id),
             )
 
     return {"work_id": work_id, "message": "修改成功"}
