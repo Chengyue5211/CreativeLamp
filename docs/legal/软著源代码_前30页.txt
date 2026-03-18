@@ -1,0 +1,1591 @@
+软件名称：绘创前程  版本号：V1.0
+
+绘创前程 V1.0  第1页
+
+# ===== 文件: backend/main.py =====
+"""
+绘创前程 — 主应用入口
+儿童原创视觉表达成长平台
+"""
+import os
+import time
+import secrets
+import logging
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI, Request
+from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse, JSONResponse
+
+from core.config import BASE_DIR, ENV, IS_PROD, ALLOWED_ORIGIN
+from core.database import init_database
+
+# 日志配置
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+)
+logger = logging.getLogger("huichuang")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期管理"""
+    logger.info("=" * 50)
+    logger.info("  绘创前程 — 儿童原创视觉表达成长平台")
+    logger.info(f"  环境: {ENV}")
+    logger.info("=" * 50)
+    init_database()
+    logger.info("  数据库初始化完成")
+    yield
+    logger.info("  绘创前程服务已停止")
+
+
+app = FastAPI(
+    title="绘创前程",
+    description="儿童原创视觉表达成长平台 — 没有原型就没有变形，没有变形就没有创造",
+    version="0.1.0",
+    docs_url=None if IS_PROD else "/docs",
+    redoc_url=None if IS_PROD else "/redoc",
+    lifespan=lifespan,
+)
+
+# CORS
+
+绘创前程 V1.0  第2页
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"] if not IS_PROD else [ALLOWED_ORIGIN],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+
+# ============================================================
+# CSRF 保护
+# ============================================================
+_CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+_CSRF_HEADER = "X-CSRF-Token"
+_CSRF_COOKIE = "csrf_token"
+
+
+@app.get("/api/csrf-token")
+async def get_csrf_token(request: Request):
+    """获取 CSRF Token（前端在页面加载时调用）"""
+    token = secrets.token_urlsafe(32)
+    response = JSONResponse({"csrf_token": token})
+    response.set_cookie(
+        _CSRF_COOKIE, token,
+        httponly=True, samesite="strict",
+        secure=IS_PROD, max_age=86400,
+    )
+    return response
+
+
+# ============================================================
+# 安全头 + 请求日志 + CSRF校验 中间件
+# ============================================================
+@app.middleware("http")
+async def security_and_logging_middleware(request: Request, call_next):
+    start = time.time()
+
+    # CSRF 校验：仅对非API的表单提交生效
+    # API端点(/api/)由 Bearer Token + CORS 保护，无需CSRF
+    # CSRF仅防护传统HTML表单提交（浏览器默认Content-Type）
+    if request.method not in _CSRF_SAFE_METHODS and not request.url.path.startswith("/api/"):
+        has_bearer = "authorization" in request.headers
+        if not has_bearer:
+            csrf_cookie = request.cookies.get(_CSRF_COOKIE)
+            csrf_header = request.headers.get(_CSRF_HEADER)
+            if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF验证失败，请刷新页面重试"},
+                )
+
+绘创前程 V1.0  第3页
+
+
+    response = await call_next(request)
+    duration = round((time.time() - start) * 1000, 1)
+
+    # 请求日志
+    logger.info(
+        f"{request.method} {request.url.path} {response.status_code} {duration}ms"
+    )
+
+    # 安全响应头
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-XSS-Protection"] = "1; mode=block"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    if IS_PROD:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; "
+            "script-src 'self'; "
+            "style-src 'self' 'unsafe-inline'; "
+            "img-src 'self' data: blob:; "
+            "font-src 'self'; "
+            "connect-src 'self'"
+        )
+
+    return response
+
+
+# 静态文件
+frontend_dir = BASE_DIR / "frontend"
+if frontend_dir.exists():
+    app.mount("/static", StaticFiles(directory=str(frontend_dir / "static")), name="static")
+
+# 导入路由
+from routers import auth, training, works, showcase, parent, merch, referral, health
+
+app.include_router(health.router)
+app.include_router(auth.router, prefix="/api/auth", tags=["认证"])
+app.include_router(training.router, prefix="/api/training", tags=["训练系统"])
+app.include_router(works.router, prefix="/api/works", tags=["作品系统"])
+app.include_router(showcase.router, prefix="/api/showcase", tags=["展示系统"])
+app.include_router(parent.router, prefix="/api/parent", tags=["家长系统"])
+app.include_router(merch.router, prefix="/api/merch", tags=["文创系统"])
+app.include_router(referral.router, prefix="/api/referral", tags=["推广系统"])
+
+
+@app.get("/", response_class=HTMLResponse)
+async def index():
+    """主页"""
+    html_path = BASE_DIR / "frontend" / "templates" / "index.html"
+
+绘创前程 V1.0  第4页
+
+    return html_path.read_text(encoding="utf-8")
+
+
+@app.get("/api/contours/image/{filename}")
+async def contour_image(filename: str):
+    """提供轮廓图形的PNG图片"""
+    from fastapi.responses import FileResponse
+    from fastapi import HTTPException
+    # 安全检查：resolve后验证仍在目标目录
+    if not filename or "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="非法文件名")
+    contour_dir = BASE_DIR / "data" / "contours"
+    filepath = (contour_dir / filename).resolve()
+    if not str(filepath).startswith(str(contour_dir.resolve())):
+        raise HTTPException(status_code=400, detail="非法文件路径")
+    if not filepath.exists():
+        raise HTTPException(status_code=404, detail="图形不存在")
+    return FileResponse(str(filepath), media_type="image/png")
+
+
+@app.get("/sw.js")
+async def service_worker():
+    """Service Worker — 必须从根路径提供以获取正确的scope"""
+    from fastapi.responses import FileResponse
+    sw_path = BASE_DIR / "frontend" / "static" / "sw.js"
+    return FileResponse(str(sw_path), media_type="application/javascript")
+
+
+if __name__ == "__main__":
+    import uvicorn
+    from core.config import HOST, PORT
+    uvicorn.run("main:app", host=HOST, port=PORT, reload=not IS_PROD)
+# ===== 文件: backend/core/config.py =====
+"""
+绘创前程 — 全局配置
+"""
+import os
+from pathlib import Path
+
+# 项目根目录
+BASE_DIR = Path(__file__).parent.parent.parent
+
+# 环境
+ENV = os.getenv("HC_ENV", "development")  # development / production
+IS_PROD = ENV == "production"
+
+# 服务器
+HOST = os.getenv("HC_HOST", "0.0.0.0")
+PORT = int(os.getenv("HC_PORT", "8100"))
+
+
+绘创前程 V1.0  第5页
+
+# 数据目录
+DATA_DIR = BASE_DIR / "data"
+UPLOAD_DIR = DATA_DIR / "uploads"
+THUMBNAIL_DIR = DATA_DIR / "thumbnails"
+PRINTABLE_DIR = DATA_DIR / "printables"
+MERCH_PREVIEW_DIR = DATA_DIR / "merch_previews"
+
+# AI 配置
+DASHSCOPE_API_KEY = os.getenv("DASHSCOPE_API_KEY", "")
+CLAUDE_API_KEY = os.getenv("CLAUDE_API_KEY", "")
+
+# 上传限制
+MAX_UPLOAD_SIZE_MB = 10
+ALLOWED_IMAGE_TYPES = {"image/jpeg", "image/png", "image/webp"}
+
+# CORS 允许的域名
+ALLOWED_ORIGIN = os.getenv("HC_ALLOWED_ORIGIN", "")
+
+# 生产环境必需的环境变量校验
+if IS_PROD:
+    _required = ["HC_SECRET_KEY", "HC_ALLOWED_ORIGIN"]
+    _missing = [v for v in _required if not os.getenv(v)]
+    if _missing:
+        raise RuntimeError(f"Production requires env vars: {', '.join(_missing)}")
+
+# 创建必要目录
+for d in [DATA_DIR, UPLOAD_DIR, THUMBNAIL_DIR, PRINTABLE_DIR, MERCH_PREVIEW_DIR]:
+    d.mkdir(parents=True, exist_ok=True)
+# ===== 文件: backend/core/database.py =====
+"""
+绘创前程 — 数据库核心模块
+统一使用 get_db() 上下文管理器，禁止裸连接
+"""
+import sqlite3
+import os
+from contextlib import contextmanager
+from pathlib import Path
+
+# 数据库文件路径
+DB_DIR = Path(__file__).parent.parent.parent / "data"
+DB_PATH = DB_DIR / "huichuang.db"
+
+
+def get_connection() -> sqlite3.Connection:
+    """创建数据库连接，启用WAL模式和外键约束"""
+    DB_DIR.mkdir(parents=True, exist_ok=True)
+    conn = sqlite3.connect(str(DB_PATH), timeout=30)
+    conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA foreign_keys=ON")
+    conn.row_factory = sqlite3.Row
+
+绘创前程 V1.0  第6页
+
+    return conn
+
+
+@contextmanager
+def get_db():
+    """数据库上下文管理器 — 所有数据库操作必须通过此接口"""
+    conn = get_connection()
+    try:
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def init_database():
+    """初始化数据库表结构"""
+    with get_db() as conn:
+        conn.executescript(SCHEMA_SQL)
+    # 增量迁移：executescript 会自动 COMMIT，需要新连接执行 ALTER TABLE
+    with get_db() as conn:
+        _migrate_add_columns(conn)
+
+
+def _migrate_add_columns(conn):
+    """增量迁移：安全地为已有表添加新列"""
+    migrations = [
+        ("users", "invite_code", "TEXT"),
+        ("users", "referred_by_id", "INTEGER REFERENCES users(id)"),
+        ("users", "credit_balance", "INTEGER DEFAULT 0"),
+    ]
+    for table, column, col_type in migrations:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        except Exception:
+            pass  # 列已存在，忽略
+    # 为新列创建索引
+    try:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code)")
+    except Exception:
+        pass
+
+
+# ============================================================
+# 数据库表结构 — 14个核心数据对象
+# ============================================================
+SCHEMA_SQL = """
+-- ========================================
+
+绘创前程 V1.0  第7页
+
+-- 1. 用户系统
+-- ========================================
+
+-- 统一用户表
+CREATE TABLE IF NOT EXISTS users (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    phone TEXT UNIQUE,
+    password_hash TEXT,
+    role TEXT NOT NULL CHECK(role IN ('child', 'parent', 'teacher', 'admin')),
+    nickname TEXT NOT NULL DEFAULT '',
+    avatar_url TEXT DEFAULT '',
+    age INTEGER CHECK(age >= 0 AND age <= 100),
+    gender TEXT CHECK(gender IN ('male', 'female', 'unknown')) DEFAULT 'unknown',
+    level_grade TEXT DEFAULT 'prep',  -- 九级体系: prep/beginner_upper/beginner_lower/mid_upper/mid_lower/adv_upper/adv_lower/super_upper/super_lower
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 用户关系表 (家长-孩子, 老师-孩子)
+CREATE TABLE IF NOT EXISTS user_relations (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER NOT NULL REFERENCES users(id),
+    child_id INTEGER NOT NULL REFERENCES users(id),
+    relation_type TEXT NOT NULL CHECK(relation_type IN ('parent_child', 'teacher_student', 'grandparent_child')),
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(parent_id, child_id, relation_type)
+);
+
+-- ========================================
+-- 2. 训练系统（双训练核心）
+-- ========================================
+
+-- 训练模块注册表
+CREATE TABLE IF NOT EXISTS training_modules (
+    id TEXT PRIMARY KEY,  -- 'module_a' 或 'module_b'
+    name TEXT NOT NULL,
+    description TEXT,
+    is_active INTEGER DEFAULT 1
+);
+
+-- 原型库（模块A的108种线条原型 + 模块B的9种基础图形）
+CREATE TABLE IF NOT EXISTS prototypes (
+    id TEXT PRIMARY KEY,  -- 如 'line_straight_01', 'shape_circle'
+    module TEXT NOT NULL CHECK(module IN ('A', 'B')),
+    category TEXT NOT NULL,       -- 大类: straight/dashed/arc/wave/zigzag/spiral/spring/castle/chinese / circle/square/triangle...
+    name_zh TEXT NOT NULL,        -- 中文名
+    name_en TEXT NOT NULL,        -- 英文名
+    variant_index INTEGER DEFAULT 1,  -- 变式编号 (1-12)
+
+绘创前程 V1.0  第8页
+
+    difficulty_level INTEGER DEFAULT 1 CHECK(difficulty_level BETWEEN 1 AND 9),  -- 对应九级
+    svg_path TEXT,                -- SVG示意图路径
+    description TEXT,
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 变形动作库（模块B的30种变形方法）
+CREATE TABLE IF NOT EXISTS transform_methods (
+    id TEXT PRIMARY KEY,  -- 如 'scale_enlarge', 'structure_decompose'
+    category TEXT NOT NULL,  -- 7大母类
+    name_zh TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    icon TEXT DEFAULT '',
+    color TEXT DEFAULT '',
+    description TEXT,
+    question_template TEXT,   -- 引导问题模板，含【对象】占位符
+    hints_json TEXT,          -- JSON: 3条启发提示
+    examples_json TEXT,       -- JSON: 变形案例
+    scoring_keywords_json TEXT,  -- JSON: 评分关键词
+    min_age INTEGER DEFAULT 4,
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 任务模板
+CREATE TABLE IF NOT EXISTS task_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    module TEXT NOT NULL CHECK(module IN ('A', 'B')),
+    title TEXT NOT NULL,
+    description TEXT,
+    task_type TEXT NOT NULL CHECK(task_type IN (
+        'identify', 'imitate', 'complete', 'transfer', 'create',
+        'contour_decorate', 'expand',
+        'single_transform', 'double_join', 'multi_generate',
+        'theme_generate', 'series_generate',
+        'detail_increase', 'accessory_increase'
+    )),
+    difficulty_level INTEGER DEFAULT 1 CHECK(difficulty_level BETWEEN 1 AND 9),
+    prototype_ids_json TEXT,     -- JSON: 涉及的原型ID列表
+    transform_ids_json TEXT,     -- JSON: 涉及的变形方法ID列表
+    requirement_json TEXT,       -- JSON: 任务规则详情
+    printable_template_id INTEGER REFERENCES printable_templates(id),
+    estimated_minutes INTEGER DEFAULT 15,
+    sort_order INTEGER DEFAULT 0,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+绘创前程 V1.0  第9页
+
+
+-- 任务实例（孩子实际接到的任务）
+CREATE TABLE IF NOT EXISTS tasks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    child_id INTEGER NOT NULL REFERENCES users(id),
+    template_id INTEGER NOT NULL REFERENCES task_templates(id),
+    status TEXT DEFAULT 'assigned' CHECK(status IN ('assigned', 'in_progress', 'submitted', 'evaluated')),
+    assigned_at TEXT DEFAULT (datetime('now')),
+    submitted_at TEXT,
+    evaluated_at TEXT
+);
+
+-- 可打印底稿模板
+CREATE TABLE IF NOT EXISTS printable_templates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    template_type TEXT NOT NULL CHECK(template_type IN ('contour', 'grid', 'free')),
+    title TEXT NOT NULL,
+    description TEXT,
+    file_path TEXT NOT NULL,  -- PDF/SVG文件路径
+    difficulty_level INTEGER DEFAULT 1,
+    is_active INTEGER DEFAULT 1,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ========================================
+-- 3. 作品系统
+-- ========================================
+
+-- 统一作品表
+CREATE TABLE IF NOT EXISTS works (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    child_id INTEGER NOT NULL REFERENCES users(id),
+    task_id INTEGER REFERENCES tasks(id),  -- 可为空（自由上传作品）
+    title TEXT NOT NULL DEFAULT '无题',
+    description TEXT DEFAULT '',
+    image_path TEXT NOT NULL,           -- 原图路径
+    thumbnail_path TEXT DEFAULT '',     -- 缩略图路径
+    source_type TEXT DEFAULT 'task' CHECK(source_type IN ('task', 'free_upload', 'family_cocreate')),
+    visibility TEXT DEFAULT 'private' CHECK(visibility IN ('private', 'family', 'public')),
+    -- 候选状态
+    merch_candidate INTEGER DEFAULT 0,       -- 文创候选
+    evidence_candidate INTEGER DEFAULT 0,    -- 存证候选
+    rights_candidate INTEGER DEFAULT 0,      -- 确权候选
+    -- AI评估
+    ai_score_originality REAL DEFAULT 0 CHECK(ai_score_originality BETWEEN 0 AND 10),    -- 原创性 (0-10)
+    ai_score_detail REAL DEFAULT 0 CHECK(ai_score_detail BETWEEN 0 AND 10),              -- 细节丰富度 (0-10)
+    ai_score_composition REAL DEFAULT 0 CHECK(ai_score_composition BETWEEN 0 AND 10),    -- 构图能力 (0-10)
+    ai_score_expression REAL DEFAULT 0 CHECK(ai_score_expression BETWEEN 0 AND 10),      -- 表达力 (0-10)
+    ai_feedback TEXT,             -- AI点评文字
+    ai_evaluated_at TEXT,
+
+绘创前程 V1.0  第10页
+
+    -- 蚂蚁链存证
+    blockchain_tx_id TEXT,
+    blockchain_attested_at TEXT,
+    -- 时间
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 作品元数据
+CREATE TABLE IF NOT EXISTS work_metadata (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_id INTEGER NOT NULL UNIQUE REFERENCES works(id),
+    prototype_tags_json TEXT,      -- JSON: AI识别出的原型标签
+    transform_tags_json TEXT,      -- JSON: AI识别出的变形方法标签
+    increase_types_json TEXT,      -- JSON: 增加动作子类型
+    color_palette_json TEXT,       -- JSON: 提取的色彩信息
+    series_name TEXT DEFAULT '',   -- 系列名称
+    module TEXT CHECK(module IN ('A', 'B', NULL)),
+    difficulty_assessed INTEGER,   -- AI评估的实际难度
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ========================================
+-- 4. 展示与成长系统
+-- ========================================
+
+-- 展示对象（展馆中的展品）
+CREATE TABLE IF NOT EXISTS showcases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    work_id INTEGER NOT NULL REFERENCES works(id),
+    showcase_type TEXT DEFAULT 'personal' CHECK(showcase_type IN ('personal', 'family', 'public')),
+    display_order INTEGER DEFAULT 0,
+    featured INTEGER DEFAULT 0,   -- 精选
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- 成长档案
+CREATE TABLE IF NOT EXISTS growth_archives (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    child_id INTEGER NOT NULL REFERENCES users(id),
+    archive_type TEXT NOT NULL CHECK(archive_type IN ('milestone', 'monthly_report', 'series_collection', 'highlight')),
+    title TEXT NOT NULL,
+    content_json TEXT,        -- JSON: 档案内容
+    cover_work_id INTEGER REFERENCES works(id),
+    period_start TEXT,
+    period_end TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ========================================
+
+绘创前程 V1.0  第11页
+
+-- 5. 文创系统
+-- ========================================
+
+-- 文创产品类型
+CREATE TABLE IF NOT EXISTS merch_types (
+    id TEXT PRIMARY KEY,  -- 'photobook', 'sticker', 'tshirt', 'mug', 'canvas', 'postcard', 'tote_bag'
+    name_zh TEXT NOT NULL,
+    name_en TEXT NOT NULL,
+    description TEXT,
+    base_price REAL NOT NULL,  -- 基础价格（分）
+    preview_template TEXT,     -- 预览模板路径
+    is_available INTEGER DEFAULT 1,
+    sort_order INTEGER DEFAULT 0
+);
+
+-- 文创订单
+CREATE TABLE IF NOT EXISTS merch_orders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    parent_id INTEGER NOT NULL REFERENCES users(id),
+    child_id INTEGER NOT NULL REFERENCES users(id),
+    merch_type_id TEXT NOT NULL REFERENCES merch_types(id),
+    work_ids_json TEXT NOT NULL,    -- JSON: 关联的作品ID列表
+    status TEXT DEFAULT 'preview' CHECK(status IN ('preview', 'confirmed', 'paid', 'producing', 'shipped', 'completed', 'cancelled')),
+    total_price REAL,
+    shipping_address TEXT,
+    preview_image_path TEXT,        -- 预览效果图
+    tracking_number TEXT,
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ========================================
+-- 6. 推广系统
+-- ========================================
+
+-- 邀请关系
+CREATE TABLE IF NOT EXISTS referrals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    inviter_id INTEGER NOT NULL REFERENCES users(id),
+    invitee_id INTEGER NOT NULL REFERENCES users(id),
+    invite_code TEXT NOT NULL,
+    status TEXT DEFAULT 'invited' CHECK(status IN ('invited', 'registered', 'activated', 'first_order', 'rewarded', 'invalid')),
+    created_at TEXT DEFAULT (datetime('now')),
+    updated_at TEXT DEFAULT (datetime('now')),
+    UNIQUE(invitee_id)  -- 一人只绑定一个邀请人
+);
+
+-- 奖励记录
+CREATE TABLE IF NOT EXISTS referral_rewards (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+
+绘创前程 V1.0  第12页
+
+    referral_id INTEGER NOT NULL REFERENCES referrals(id),
+    reward_type TEXT NOT NULL CHECK(reward_type IN ('register_bonus', 'first_order_bonus', 'revenue_share')),
+    recipient_id INTEGER NOT NULL REFERENCES users(id),
+    gross_amount REAL DEFAULT 0,
+    cost_amount REAL DEFAULT 0,
+    net_amount REAL DEFAULT 0,
+    reward_amount REAL DEFAULT 0,
+    status TEXT DEFAULT 'pending' CHECK(status IN ('pending', 'settled', 'invalid', 'reversed')),
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ========================================
+-- 7. 学币（积分）系统
+-- ========================================
+
+-- 学币交易流水
+CREATE TABLE IF NOT EXISTS credit_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    amount INTEGER NOT NULL,             -- 正=收入, 负=支出 (单位:学币)
+    balance_after INTEGER NOT NULL,      -- 交易后余额
+    tx_type TEXT NOT NULL CHECK(tx_type IN (
+        'referral_signup',       -- 推荐注册奖励
+        'referral_l2_signup',    -- 二级推荐注册奖励
+        'welcome_bonus',         -- 被邀请人注册奖励
+        'milestone_bonus',       -- 里程碑奖励
+        'admin_adjustment',      -- 管理员调整
+        'course_purchase',       -- 课程消费
+        'merch_purchase',        -- 文创消费
+        'withdrawal'             -- 提现
+    )),
+    reference_id INTEGER,                -- 关联ID（referral_id等）
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ========================================
+-- 索引
+-- ========================================
+CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+CREATE INDEX IF NOT EXISTS idx_user_relations_parent ON user_relations(parent_id);
+CREATE INDEX IF NOT EXISTS idx_user_relations_child ON user_relations(child_id);
+CREATE INDEX IF NOT EXISTS idx_prototypes_module ON prototypes(module);
+CREATE INDEX IF NOT EXISTS idx_prototypes_category ON prototypes(category);
+CREATE INDEX IF NOT EXISTS idx_transform_methods_category ON transform_methods(category);
+CREATE INDEX IF NOT EXISTS idx_task_templates_module ON task_templates(module);
+CREATE INDEX IF NOT EXISTS idx_task_templates_difficulty ON task_templates(difficulty_level);
+CREATE INDEX IF NOT EXISTS idx_tasks_child ON tasks(child_id);
+CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+
+绘创前程 V1.0  第13页
+
+CREATE INDEX IF NOT EXISTS idx_works_child ON works(child_id);
+CREATE INDEX IF NOT EXISTS idx_works_visibility ON works(visibility);
+CREATE INDEX IF NOT EXISTS idx_works_created ON works(created_at);
+CREATE INDEX IF NOT EXISTS idx_works_merch_candidate ON works(merch_candidate);
+CREATE INDEX IF NOT EXISTS idx_work_metadata_work ON work_metadata(work_id);
+CREATE INDEX IF NOT EXISTS idx_showcases_work ON showcases(work_id);
+CREATE INDEX IF NOT EXISTS idx_showcases_type ON showcases(showcase_type);
+CREATE INDEX IF NOT EXISTS idx_growth_archives_child ON growth_archives(child_id);
+CREATE INDEX IF NOT EXISTS idx_merch_orders_parent ON merch_orders(parent_id);
+CREATE INDEX IF NOT EXISTS idx_merch_orders_status ON merch_orders(status);
+CREATE INDEX IF NOT EXISTS idx_referrals_inviter ON referrals(inviter_id);
+CREATE INDEX IF NOT EXISTS idx_referrals_code ON referrals(invite_code);
+CREATE INDEX IF NOT EXISTS idx_works_task_id ON works(task_id);
+CREATE INDEX IF NOT EXISTS idx_works_source_type ON works(source_type);
+CREATE INDEX IF NOT EXISTS idx_tasks_template_id ON tasks(template_id);
+CREATE INDEX IF NOT EXISTS idx_task_templates_active ON task_templates(is_active);
+CREATE INDEX IF NOT EXISTS idx_merch_orders_child ON merch_orders(child_id);
+CREATE INDEX IF NOT EXISTS idx_referral_rewards_recipient ON referral_rewards(recipient_id);
+CREATE INDEX IF NOT EXISTS idx_work_metadata_module ON work_metadata(module);
+CREATE INDEX IF NOT EXISTS idx_credit_transactions_user ON credit_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_transactions_type ON credit_transactions(tx_type);
+"""
+# ===== 文件: backend/core/security.py =====
+"""
+绘创前程 — 安全模块
+JWT认证 + bcrypt密码哈希 + Token黑名单 + 速率限制
+"""
+import os
+import uuid
+import time
+import hashlib
+import hmac
+from datetime import datetime, timedelta, timezone
+from typing import Optional
+from collections import defaultdict
+
+import jwt
+import bcrypt
+from fastapi import HTTPException, Depends, Request
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
+from core.config import IS_PROD
+
+# 配置
+SECRET_KEY = os.getenv("HC_SECRET_KEY", "")
+if not SECRET_KEY:
+    if IS_PROD:
+        raise RuntimeError("生产环境必须设置 HC_SECRET_KEY 环境变量")
+    SECRET_KEY = "huichuang-dev-secret-key-only-for-dev"
+
+
+绘创前程 V1.0  第14页
+
+ALGORITHM = "HS256"
+ACCESS_TOKEN_EXPIRE_HOURS = 24
+ISSUER = "huichuang-qiancheng"
+AUDIENCE = "huichuang-app"
+
+security_scheme = HTTPBearer(auto_error=False)
+
+# ============================================================
+# Token黑名单（内存实现，生产应用Redis）
+# ============================================================
+_token_blacklist: set[str] = set()
+_blacklist_expiry: dict[str, float] = {}
+_BLACKLIST_MAX_SIZE = 10000  # 防止内存无限增长
+
+
+def blacklist_token(jti: str, exp_timestamp: float):
+    """将token加入黑名单"""
+    # 先清理过期条目，再检查容量
+    _cleanup_blacklist()
+    if len(_token_blacklist) >= _BLACKLIST_MAX_SIZE:
+        # 容量满时强制清理最早的条目
+        oldest = min(_blacklist_expiry, key=_blacklist_expiry.get)
+        _token_blacklist.discard(oldest)
+        _blacklist_expiry.pop(oldest, None)
+    _token_blacklist.add(jti)
+    _blacklist_expiry[jti] = exp_timestamp
+
+
+def _cleanup_blacklist():
+    """清理所有已过期的黑名单条目"""
+    now = time.time()
+    expired = [k for k, v in _blacklist_expiry.items() if v < now]
+    for k in expired:
+        _token_blacklist.discard(k)
+        _blacklist_expiry.pop(k, None)
+
+
+def is_token_blacklisted(jti: str) -> bool:
+    """检查token是否已被撤销"""
+    _cleanup_blacklist()
+    return jti in _token_blacklist
+
+
+# ============================================================
+# 速率限制（内存实现）
+# ============================================================
+_rate_limits: dict[str, list[float]] = defaultdict(list)
+RATE_LIMIT_WINDOW = 60  # 秒
+RATE_LIMIT_MAX_LOGIN = 10  # 每分钟最多10次登录尝试
+RATE_LIMIT_MAX_REGISTER = 5  # 每分钟最多5次注册
+
+绘创前程 V1.0  第15页
+
+
+
+def check_rate_limit(key: str, max_attempts: int = RATE_LIMIT_MAX_LOGIN):
+    """检查速率限制"""
+    now = time.time()
+    attempts = _rate_limits[key]
+    # 清理窗口外的记录
+    _rate_limits[key] = [t for t in attempts if now - t < RATE_LIMIT_WINDOW]
+    if len(_rate_limits[key]) >= max_attempts:
+        raise HTTPException(status_code=429, detail="请求过于频繁，请稍后再试")
+    _rate_limits[key].append(now)
+
+
+# ============================================================
+# 密码
+# ============================================================
+def hash_password(password: str) -> str:
+    """bcrypt 哈希密码"""
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt()).decode("utf-8")
+
+
+def verify_password(plain: str, hashed: str) -> bool:
+    """验证密码"""
+    return bcrypt.checkpw(plain.encode("utf-8"), hashed.encode("utf-8"))
+
+
+# ============================================================
+# JWT
+# ============================================================
+def create_access_token(user_id: int, role: str, extra: Optional[dict] = None) -> str:
+    """创建JWT访问令牌"""
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": str(user_id),
+        "role": role,
+        "iss": ISSUER,
+        "aud": AUDIENCE,
+        "iat": now,
+        "exp": now + timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS),
+        "jti": str(uuid.uuid4()),
+    }
+    if extra:
+        payload.update(extra)
+    return jwt.encode(payload, SECRET_KEY, algorithm=ALGORITHM)
+
+
+def decode_token(token: str) -> dict:
+    """解码并验证JWT"""
+    try:
+        payload = jwt.decode(
+
+绘创前程 V1.0  第16页
+
+            token, SECRET_KEY,
+            algorithms=[ALGORITHM],
+            issuer=ISSUER,
+            audience=AUDIENCE,
+        )
+        # 检查黑名单
+        jti = payload.get("jti")
+        if jti and is_token_blacklisted(jti):
+            raise HTTPException(status_code=401, detail="令牌已失效")
+        return payload
+    except jwt.ExpiredSignatureError:
+        raise HTTPException(status_code=401, detail="令牌已过期")
+    except jwt.InvalidTokenError:
+        raise HTTPException(status_code=401, detail="无效令牌")
+
+
+def extract_token_claims(token: str) -> Optional[dict]:
+    """提取token中的claims（不验证签名，用于登出时获取jti/exp）"""
+    try:
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM],
+                         issuer=ISSUER, audience=AUDIENCE)
+    except jwt.InvalidTokenError:
+        return None
+
+
+# ============================================================
+# FastAPI 依赖
+# ============================================================
+async def get_current_user(
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(security_scheme),
+) -> dict:
+    """获取当前认证用户"""
+    if not credentials:
+        raise HTTPException(status_code=401, detail="未提供认证信息")
+    payload = decode_token(credentials.credentials)
+    return {
+        "user_id": int(payload["sub"]),
+        "role": payload["role"],
+        "jti": payload.get("jti"),
+        "exp": payload.get("exp"),
+    }
+
+
+async def require_parent(current_user: dict = Depends(get_current_user)) -> dict:
+    """要求家长角色"""
+    if current_user["role"] not in ("parent", "admin"):
+        raise HTTPException(status_code=403, detail="需要家长权限")
+    return current_user
+
+
+
+绘创前程 V1.0  第17页
+
+async def require_admin(current_user: dict = Depends(get_current_user)) -> dict:
+    """要求管理员角色"""
+    if current_user["role"] != "admin":
+        raise HTTPException(status_code=403, detail="需要管理员权限")
+    return current_user
+# ===== 文件: backend/data/prototypes.py =====
+"""
+绘创前程 — 原型数据库
+基于创始人原创理论："没有原型，就没有变形；没有变形，就没有创造"
+
+模块A：108种线条原型（9大类 × 12变式）
+模块B：9种基础图形
+"""
+
+# ============================================================
+# 模块A：9大类开放性线条原型
+# 每类12种变式，共108种
+# ============================================================
+
+LINE_PROTOTYPE_CATEGORIES = [
+    {
+        "id": "straight",
+        "name_zh": "直线",
+        "name_en": "Straight Line",
+        "description": "最基础的线条原型，包括横直线、竖直线、斜线、十字线、放射线等12种变式",
+        "variants": [
+            {"index": 1,  "name_zh": "横直线",   "name_en": "Horizontal Line"},
+            {"index": 2,  "name_zh": "竖直线",   "name_en": "Vertical Line"},
+            {"index": 3,  "name_zh": "斜线",     "name_en": "Diagonal Line"},
+            {"index": 4,  "name_zh": "十字线",   "name_en": "Cross Line"},
+            {"index": 5,  "name_zh": "直角线",   "name_en": "Right Angle Line"},
+            {"index": 6,  "name_zh": "放射线",   "name_en": "Radial Line"},
+            {"index": 7,  "name_zh": "丁字线",   "name_en": "T-Line"},
+            {"index": 8,  "name_zh": "土字线",   "name_en": "Earth-Shape Line"},
+            {"index": 9,  "name_zh": "田字线",   "name_en": "Grid Line"},
+            {"index": 10, "name_zh": "井字线",   "name_en": "Hash Line"},
+            {"index": 11, "name_zh": "米字线",   "name_en": "Star-Cross Line"},
+            {"index": 12, "name_zh": "网格线",   "name_en": "Mesh Line"},
+        ],
+    },
+    {
+        "id": "dashed",
+        "name_zh": "虚线",
+        "name_en": "Dashed Line",
+        "description": "断续的线条原型，通过间隔节奏产生韵律感",
+        "variants": [
+            {"index": 1,  "name_zh": "短虚线",     "name_en": "Short Dash"},
+            {"index": 2,  "name_zh": "长虚线",     "name_en": "Long Dash"},
+            {"index": 3,  "name_zh": "点虚线",     "name_en": "Dot Dash"},
+            {"index": 4,  "name_zh": "线点虚线",   "name_en": "Dash-Dot"},
+
+绘创前程 V1.0  第18页
+
+            {"index": 5,  "name_zh": "长短虚线",   "name_en": "Long-Short Dash"},
+            {"index": 6,  "name_zh": "双点虚线",   "name_en": "Double-Dot Dash"},
+            {"index": 7,  "name_zh": "粗虚线",     "name_en": "Thick Dash"},
+            {"index": 8,  "name_zh": "细虚线",     "name_en": "Thin Dash"},
+            {"index": 9,  "name_zh": "渐变虚线",   "name_en": "Gradient Dash"},
+            {"index": 10, "name_zh": "交替虚线",   "name_en": "Alternating Dash"},
+            {"index": 11, "name_zh": "装饰虚线",   "name_en": "Decorative Dash"},
+            {"index": 12, "name_zh": "节奏虚线",   "name_en": "Rhythmic Dash"},
+        ],
+    },
+    {
+        "id": "arc",
+        "name_zh": "弧线",
+        "name_en": "Arc Line",
+        "description": "柔和的弯曲线条，具有自然流动感",
+        "variants": [
+            {"index": 1,  "name_zh": "弧线",       "name_en": "Arc"},
+            {"index": 2,  "name_zh": "叠弧线",     "name_en": "Stacked Arc"},
+            {"index": 3,  "name_zh": "彩虹线",     "name_en": "Rainbow Arc"},
+            {"index": 4,  "name_zh": "反向弧线",   "name_en": "Reverse Arc"},
+            {"index": 5,  "name_zh": "花状弧线",   "name_en": "Flower Arc"},
+            {"index": 6,  "name_zh": "山状弧线",   "name_en": "Mountain Arc"},
+            {"index": 7,  "name_zh": "三角弧线",   "name_en": "Triangle Arc"},
+            {"index": 8,  "name_zh": "元宝形弧线", "name_en": "Ingot Arc"},
+            {"index": 9,  "name_zh": "藤线弧线",   "name_en": "Vine Arc"},
+            {"index": 10, "name_zh": "波弧线",     "name_en": "Wave Arc"},
+            {"index": 11, "name_zh": "对称弧线",   "name_en": "Symmetric Arc"},
+            {"index": 12, "name_zh": "连续弧线",   "name_en": "Continuous Arc"},
+        ],
+    },
+    {
+        "id": "wave",
+        "name_zh": "波浪线",
+        "name_en": "Wave Line",
+        "description": "连续起伏的线条，如水波、山峦",
+        "variants": [
+            {"index": 1,  "name_zh": "波浪线",     "name_en": "Wave"},
+            {"index": 2,  "name_zh": "上行波浪线", "name_en": "Rising Wave"},
+            {"index": 3,  "name_zh": "下行波浪线", "name_en": "Falling Wave"},
+            {"index": 4,  "name_zh": "山形波浪线", "name_en": "Mountain Wave"},
+            {"index": 5,  "name_zh": "河流波浪线", "name_en": "River Wave"},
+            {"index": 6,  "name_zh": "鱼鳞线",     "name_en": "Fish Scale"},
+            {"index": 7,  "name_zh": "网状线",     "name_en": "Net Wave"},
+            {"index": 8,  "name_zh": "双波浪线",   "name_en": "Double Wave"},
+            {"index": 9,  "name_zh": "密波浪线",   "name_en": "Dense Wave"},
+            {"index": 10, "name_zh": "疏波浪线",   "name_en": "Sparse Wave"},
+            {"index": 11, "name_zh": "粗细波浪线", "name_en": "Varied Wave"},
+            {"index": 12, "name_zh": "装饰波浪线", "name_en": "Decorative Wave"},
+        ],
+    },
+
+绘创前程 V1.0  第19页
+
+    {
+        "id": "zigzag",
+        "name_zh": "折线/锯齿线",
+        "name_en": "Zigzag Line",
+        "description": "尖锐转折的线条，充满力量感和节奏感",
+        "variants": [
+            {"index": 1,  "name_zh": "锯齿线",       "name_en": "Zigzag"},
+            {"index": 2,  "name_zh": "上行锯齿线",   "name_en": "Rising Zigzag"},
+            {"index": 3,  "name_zh": "下行锯齿线",   "name_en": "Falling Zigzag"},
+            {"index": 4,  "name_zh": "M形锯齿线",    "name_en": "M-Zigzag"},
+            {"index": 5,  "name_zh": "W形锯齿线",    "name_en": "W-Zigzag"},
+            {"index": 6,  "name_zh": "圆形锯齿线",   "name_en": "Circular Zigzag"},
+            {"index": 7,  "name_zh": "三角锯齿线",   "name_en": "Triangle Zigzag"},
+            {"index": 8,  "name_zh": "阶梯锯齿线",   "name_en": "Step Zigzag"},
+            {"index": 9,  "name_zh": "密锯齿线",     "name_en": "Dense Zigzag"},
+            {"index": 10, "name_zh": "疏锯齿线",     "name_en": "Sparse Zigzag"},
+            {"index": 11, "name_zh": "粗细锯齿线",   "name_en": "Varied Zigzag"},
+            {"index": 12, "name_zh": "装饰锯齿线",   "name_en": "Decorative Zigzag"},
+        ],
+    },
+    {
+        "id": "spiral",
+        "name_zh": "螺旋线",
+        "name_en": "Spiral Line",
+        "description": "旋转向内或向外的线条，具有生长感和运动感",
+        "variants": [
+            {"index": 1,  "name_zh": "圆形螺旋线",   "name_en": "Round Spiral"},
+            {"index": 2,  "name_zh": "三角螺旋线",   "name_en": "Triangle Spiral"},
+            {"index": 3,  "name_zh": "方形螺旋线",   "name_en": "Square Spiral"},
+            {"index": 4,  "name_zh": "花朵螺旋线",   "name_en": "Flower Spiral"},
+            {"index": 5,  "name_zh": "花枝螺旋线",   "name_en": "Branch Spiral"},
+            {"index": 6,  "name_zh": "五角螺旋线",   "name_en": "Pentagon Spiral"},
+            {"index": 7,  "name_zh": "双螺旋线",     "name_en": "Double Spiral"},
+            {"index": 8,  "name_zh": "蜗牛螺旋线",   "name_en": "Snail Spiral"},
+            {"index": 9,  "name_zh": "紧螺旋线",     "name_en": "Tight Spiral"},
+            {"index": 10, "name_zh": "松螺旋线",     "name_en": "Loose Spiral"},
+            {"index": 11, "name_zh": "渐变螺旋线",   "name_en": "Gradient Spiral"},
+            {"index": 12, "name_zh": "装饰螺旋线",   "name_en": "Decorative Spiral"},
+        ],
+    },
+    {
+        "id": "spring",
+        "name_zh": "弹簧线",
+        "name_en": "Spring Line",
+        "description": "具有弹性和动态感的连续环绕线条",
+        "variants": [
+            {"index": 1,  "name_zh": "圆弹簧线",     "name_en": "Round Spring"},
+            {"index": 2,  "name_zh": "椭圆弹簧线",   "name_en": "Oval Spring"},
+            {"index": 3,  "name_zh": "三角弹簧线",   "name_en": "Triangle Spring"},
+            {"index": 4,  "name_zh": "方弹簧线",     "name_en": "Square Spring"},
+
+绘创前程 V1.0  第20页
+
+            {"index": 5,  "name_zh": "紧弹簧线",     "name_en": "Tight Spring"},
+            {"index": 6,  "name_zh": "松弹簧线",     "name_en": "Loose Spring"},
+            {"index": 7,  "name_zh": "渐变弹簧线",   "name_en": "Gradient Spring"},
+            {"index": 8,  "name_zh": "双弹簧线",     "name_en": "Double Spring"},
+            {"index": 9,  "name_zh": "花形弹簧线",   "name_en": "Flower Spring"},
+            {"index": 10, "name_zh": "波浪弹簧线",   "name_en": "Wave Spring"},
+            {"index": 11, "name_zh": "扭转弹簧线",   "name_en": "Twist Spring"},
+            {"index": 12, "name_zh": "装饰弹簧线",   "name_en": "Decorative Spring"},
+        ],
+    },
+    {
+        "id": "castle",
+        "name_zh": "城墙线",
+        "name_en": "Castle Line",
+        "description": "方形凹凸交替的线条，如城墙垛口",
+        "variants": [
+            {"index": 1,  "name_zh": "城墙线",       "name_en": "Castle"},
+            {"index": 2,  "name_zh": "口形城墙线",   "name_en": "Square Castle"},
+            {"index": 3,  "name_zh": "串城墙线",     "name_en": "String Castle"},
+            {"index": 4,  "name_zh": "高低楼房线",   "name_en": "Building Castle"},
+            {"index": 5,  "name_zh": "芭蕉叶城墙线", "name_en": "Banana Leaf Castle"},
+            {"index": 6,  "name_zh": "阶梯城墙线",   "name_en": "Step Castle"},
+            {"index": 7,  "name_zh": "圆顶城墙线",   "name_en": "Dome Castle"},
+            {"index": 8,  "name_zh": "尖顶城墙线",   "name_en": "Spire Castle"},
+            {"index": 9,  "name_zh": "双层城墙线",   "name_en": "Double Castle"},
+            {"index": 10, "name_zh": "密城墙线",     "name_en": "Dense Castle"},
+            {"index": 11, "name_zh": "疏城墙线",     "name_en": "Sparse Castle"},
+            {"index": 12, "name_zh": "装饰城墙线",   "name_en": "Decorative Castle"},
+        ],
+    },
+    {
+        "id": "chinese",
+        "name_zh": "中式纹样线",
+        "name_en": "Chinese Pattern Line",
+        "description": "源自中国传统装饰的经典纹样线条",
+        "variants": [
+            {"index": 1,  "name_zh": "回纹线",       "name_en": "Fret Pattern"},
+            {"index": 2,  "name_zh": "云纹线",       "name_en": "Cloud Pattern"},
+            {"index": 3,  "name_zh": "如意纹",       "name_en": "Ruyi Pattern"},
+            {"index": 4,  "name_zh": "万字纹",       "name_en": "Wan Pattern"},
+            {"index": 5,  "name_zh": "卷草纹",       "name_en": "Scroll Pattern"},
+            {"index": 6,  "name_zh": "水纹线",       "name_en": "Water Pattern"},
+            {"index": 7,  "name_zh": "缠枝纹",       "name_en": "Interlocking Pattern"},
+            {"index": 8,  "name_zh": "祥云纹",       "name_en": "Auspicious Cloud"},
+            {"index": 9,  "name_zh": "龙纹线",       "name_en": "Dragon Pattern"},
+            {"index": 10, "name_zh": "凤纹线",       "name_en": "Phoenix Pattern"},
+            {"index": 11, "name_zh": "莲纹线",       "name_en": "Lotus Pattern"},
+            {"index": 12, "name_zh": "几何纹线",     "name_en": "Geometric Pattern"},
+        ],
+    },
+
+绘创前程 V1.0  第21页
+
+]
+
+# ============================================================
+# 模块B：9种基础图形原型
+# ============================================================
+
+SHAPE_PROTOTYPES = [
+    {"id": "shape_circle",    "name_zh": "圆",     "name_en": "Circle"},
+    {"id": "shape_square",    "name_zh": "方",     "name_en": "Square"},
+    {"id": "shape_triangle",  "name_zh": "三角",   "name_en": "Triangle"},
+    {"id": "shape_ellipse",   "name_zh": "椭圆",   "name_en": "Ellipse"},
+    {"id": "shape_semicircle","name_zh": "半圆",   "name_en": "Semicircle"},
+    {"id": "shape_teardrop",  "name_zh": "水滴形", "name_en": "Teardrop"},
+    {"id": "shape_leaf",      "name_zh": "叶形",   "name_en": "Leaf"},
+    {"id": "shape_cloud",     "name_zh": "云形",   "name_en": "Cloud"},
+    {"id": "shape_capsule",   "name_zh": "胶囊形", "name_en": "Capsule"},
+]
+
+
+def get_all_line_prototypes():
+    """获取全部108种线条原型的扁平列表"""
+    result = []
+    for cat in LINE_PROTOTYPE_CATEGORIES:
+        for v in cat["variants"]:
+            result.append({
+                "id": f"line_{cat['id']}_{v['index']:02d}",
+                "module": "A",
+                "category": cat["id"],
+                "category_name_zh": cat["name_zh"],
+                "name_zh": v["name_zh"],
+                "name_en": v["name_en"],
+                "variant_index": v["index"],
+            })
+    return result
+
+
+def get_all_prototypes():
+    """获取全部原型（108线条 + 9图形）"""
+    lines = get_all_line_prototypes()
+    shapes = [
+        {
+            "id": s["id"],
+            "module": "B",
+            "category": s["id"].replace("shape_", ""),
+            "category_name_zh": "基础图形",
+            "name_zh": s["name_zh"],
+            "name_en": s["name_en"],
+            "variant_index": 1,
+        }
+        for s in SHAPE_PROTOTYPES
+
+绘创前程 V1.0  第22页
+
+    ]
+    return lines + shapes
+
+
+# 总计: 108 + 9 = 117 个原型
+TOTAL_PROTOTYPES = 9 * 12 + 9  # = 117
+# ===== 文件: backend/data/transforms.py =====
+"""
+绘创前程 — 模块B：图形变形与结构生成动作
+基于创始人原创理论 PRD 定义
+
+核心逻辑：基础形 → 变形动作 → 结构生成 → 个体化增加 → 新对象形成
+
+7种变形与结构生成动作（非思维创造力变形，是绘画图形变形）：
+1. 拉长 — 改变比例关系
+2. 切分 — 形成内部结构变化
+3. 叠加 — 形成层次与新关系
+4. 拼接 — 连接形成新整体
+5. 缺口与添加 — 挖去或补上部分改变结构
+6. 延展 — "往外长"，向外生长扩展
+7. 增加 — "往里添"，自由增加新元素（5种子类型）
+"""
+
+# ============================================================
+# 7种变形与结构生成动作
+# ============================================================
+
+TRANSFORM_ACTIONS = [
+    {
+        "id": "stretch",
+        "name_zh": "拉长",
+        "name_en": "Stretch",
+        "description": "将原有图形向某一方向拉高、拉宽、拉细、拉扁，使其形成新的比例关系",
+        "instruction": "试试把这个图形往上拉高，或者往旁边拉宽，看看它变成了什么新形状？",
+        "hints": [
+            "往上拉会变得又高又瘦",
+            "往两边拉会变得又矮又胖",
+            "试试只拉图形的一部分",
+        ],
+        "examples": [
+            "圆拉长变成椭圆",
+            "正方形拉高变成长方形",
+            "三角形拉宽变成扁三角",
+        ],
+        "sort_order": 1,
+    },
+    {
+        "id": "split",
+        "name_zh": "切分",
+        "name_en": "Split",
+
+绘创前程 V1.0  第23页
+
+        "description": "把一个整体图形分成两个、三个或更多部分，形成内部结构变化",
+        "instruction": "在图形上画几条线，把它切成几块。每一块可以有不同的装饰！",
+        "hints": [
+            "横着切、竖着切、斜着切效果都不同",
+            "切成不等大的块更有趣",
+            "切开的部分可以稍微分开一点",
+        ],
+        "examples": [
+            "圆被十字线切成四瓣",
+            "方形被对角线切成三角",
+            "图形切开后中间留缝隙",
+        ],
+        "sort_order": 2,
+    },
+    {
+        "id": "overlap",
+        "name_zh": "叠加",
+        "name_en": "Overlap",
+        "description": "让两个或多个图形在空间上重叠，形成层次与新关系",
+        "instruction": "把两个图形叠在一起，看看重叠的地方变成了什么新图案？",
+        "hints": [
+            "大图形和小图形叠在一起",
+            "同样的形状错开位置叠加",
+            "重叠部分可以画上特别的装饰",
+        ],
+        "examples": [
+            "两个圆叠在一起像眼镜",
+            "三角形叠上方形像房子",
+            "多个圆层层叠加像花朵",
+        ],
+        "sort_order": 3,
+    },
+    {
+        "id": "join",
+        "name_zh": "拼接",
+        "name_en": "Join",
+        "description": "把两个或多个不同图形连接起来，形成新的整体对象",
+        "instruction": "选几个不同的图形，把它们拼在一起，看能变成什么新东西！",
+        "hints": [
+            "上下拼接、左右拼接效果不同",
+            "不同大小的图形拼在一起更有趣",
+            "拼接处可以自然过渡也可以直接连接",
+        ],
+        "examples": [
+            "半圆+长方形=冰棍",
+            "圆+三角+长方形=小人",
+            "多个方形拼接=城堡",
+        ],
+        "sort_order": 4,
+    },
+
+绘创前程 V1.0  第24页
+
+    {
+        "id": "notch_add",
+        "name_zh": "缺口与添加",
+        "name_en": "Notch & Add",
+        "description": "在原有图形中挖掉一部分，或补上一部分，使结构发生明显改变",
+        "instruction": "在图形上挖一个洞，或者在边上补一块，看看它变成了什么？",
+        "hints": [
+            "挖一个缺口像被咬了一口",
+            "补上一块像长出了什么",
+            "缺口和添加可以同时使用",
+        ],
+        "examples": [
+            "圆挖一个缺口变成吃豆人",
+            "方形缺一角变成门",
+            "三角形顶上补一个圆变成冰淇淋",
+        ],
+        "sort_order": 5,
+    },
+    {
+        "id": "extend",
+        "name_zh": "延展",
+        "name_en": "Extend",
+        "description": "从原有结构向外生长、伸展、扩展，使图形形成更大的空间关系或发展方向。延展是'往外长'",
+        "instruction": "让图形往外面长出新的东西！像植物发芽一样向外伸展。",
+        "hints": [
+            "从边缘往外长出线条或形状",
+            "像树枝一样向不同方向延伸",
+            "延展的部分可以比原来的图形更大",
+        ],
+        "examples": [
+            "圆往外长出触角变成太阳",
+            "方形四角延伸变成桌子",
+            "图形向下延展变成有脚的角色",
+        ],
+        "sort_order": 6,
+    },
+    {
+        "id": "increase",
+        "name_zh": "增加",
+        "name_en": "Increase",
+        "description": "在原有图形或结构基础上，自由增加新的线条、细节、部件、复制元素或附属对象，使对象更丰富、更完整或更具个体特征。增加是'往里面添内容'",
+        "instruction": "给你的图形添加更多内容！可以画表情、花纹、小部件，让它变成独一无二的角色！",
+        "hints": [
+            "添加眼睛嘴巴它就有了表情",
+            "添加花纹线条它就更好看",
+            "添加小部件它就有了新功能",
+        ],
+        "examples": [
+            "圆+眼睛+嘴巴=笑脸",
+            "方形+门+窗=房子",
+
+绘创前程 V1.0  第25页
+
+            "三角+花纹+尾巴=小鱼",
+        ],
+        "sort_order": 7,
+    },
+]
+
+# ============================================================
+# "增加"动作的5种子类型
+# ============================================================
+
+INCREASE_SUBTYPES = [
+    {
+        "id": "detail_add",
+        "parent_action": "increase",
+        "name_zh": "细节增加",
+        "name_en": "Detail Add",
+        "description": "在已有形态上添加纹理、表情、花纹等细节，让对象更精致",
+        "examples": ["给圆脸画上笑脸表情", "在花瓶上画出花纹", "给动物画上斑点"],
+    },
+    {
+        "id": "line_add",
+        "parent_action": "increase",
+        "name_zh": "线条增加",
+        "name_en": "Line Add",
+        "description": "用线条丰富对象的轮廓或内部，如胡须、头发、毛发质感",
+        "examples": ["给太阳画出光芒线", "给小猫画上胡须", "给衣服画上条纹"],
+    },
+    {
+        "id": "part_add",
+        "parent_action": "increase",
+        "name_zh": "部件增加",
+        "name_en": "Part Add",
+        "description": "给对象添加新的功能性部件，如手、脚、轮子、翅膀",
+        "examples": ["给角色添上翅膀", "给机器人加上手臂", "给汽车装上轮子"],
+    },
+    {
+        "id": "duplicate_add",
+        "parent_action": "increase",
+        "name_zh": "复制增加",
+        "name_en": "Duplicate Add",
+        "description": "重复某个元素产生节奏感，如多个窗户、一排牙齿",
+        "examples": ["大楼上画一排排窗户", "嘴巴里画出一排牙齿", "花园里复制很多花"],
+    },
+    {
+        "id": "accessory_add",
+        "parent_action": "increase",
+        "name_zh": "附属对象增加",
+        "name_en": "Accessory Add",
+        "description": "给对象添加独立的附属小物件，如帽子、围巾、手提包",
+        "examples": ["给角色戴上帽子", "给房子旁边画一棵树", "给动物加一个蝴蝶结"],
+
+绘创前程 V1.0  第26页
+
+    },
+]
+
+
+# ============================================================
+# 模块A：原型组合的呈现方式（构图方式）
+# ============================================================
+
+COMBINATION_MODES = [
+    {"id": "repeat",          "name_zh": "重复",       "description": "同一原型反复排列，形成节奏感"},
+    {"id": "arrange",         "name_zh": "排列",       "description": "多种原型按规律排列，形成有序的画面"},
+    {"id": "density",         "name_zh": "疏密变化",   "description": "通过线条疏密产生视觉节奏和层次"},
+    {"id": "thickness",       "name_zh": "粗细变化",   "description": "改变线条粗细产生对比和层次"},
+    {"id": "direction",       "name_zh": "方向变化",   "description": "改变线条方向产生动态和运动感"},
+    {"id": "surround",        "name_zh": "环绕",       "description": "线条围绕中心环绕排列，形成向心结构"},
+    {"id": "cross",           "name_zh": "交叉",       "description": "不同线条交叉叠加，形成编织感"},
+    {"id": "zone_fill",       "name_zh": "分区填充",   "description": "将画面分区，用不同原型填充各区"},
+    {"id": "center_spread",   "name_zh": "中心扩散",   "description": "从中心向外逐层扩散，由内而外展开"},
+]
+
+
+# ============================================================
+# 模块B：难度梯度
+# ============================================================
+
+MODULE_B_DIFFICULTY = [
+    {"level": 1, "name_zh": "单形变形",   "description": "对一个基础形进行单一变形动作"},
+    {"level": 2, "name_zh": "双形拼接",   "description": "两个基础形通过拼接形成新对象"},
+    {"level": 3, "name_zh": "多形生成",   "description": "多个基础形组合变形生成复杂结构"},
+    {"level": 4, "name_zh": "主题生成",   "description": "围绕主题自由运用多种变形生成角色或场景"},
+    {"level": 5, "name_zh": "系列生成",   "description": "生成一组有关联的系列作品或角色家族"},
+]
+
+
+# ============================================================
+# 模块B：任务类型
+# ============================================================
+
+MODULE_B_TASK_TYPES = [
+    {"id": "single_transform",   "name_zh": "单形变形任务",     "description": "对一个基础形执行指定变形动作"},
+    {"id": "double_join",        "name_zh": "双形拼接任务",     "description": "选两个基础形拼接成新对象"},
+    {"id": "multi_generate",     "name_zh": "多形结构生成任务", "description": "用多个基础形和多种动作生成复杂结构"},
+    {"id": "theme_generate",     "name_zh": "主题生成任务",     "description": "围绕给定主题自由创造"},
+    {"id": "series_generate",    "name_zh": "系列生成任务",     "description": "创造一组有关联的系列作品"},
+    {"id": "detail_increase",    "name_zh": "增加细节任务",     "description": "给已有图形增加细节使其更丰富"},
+    {"id": "accessory_increase", "name_zh": "增加附属任务",     "description": "给已有图形添加附属对象"},
+]
+
+
+# ============================================================
+
+绘创前程 V1.0  第27页
+
+# 模块B：作品输出类型
+# ============================================================
+
+MODULE_B_OUTPUT_TYPES = [
+    {"id": "fantasy_creature",   "name_zh": "奇想生物",   "description": "通过变形生成的奇特生物"},
+    {"id": "dream_building",     "name_zh": "梦幻建筑",   "description": "通过拼接叠加生成的建筑"},
+    {"id": "structure_character", "name_zh": "结构型角色", "description": "由基础形变形组合而成的角色"},
+    {"id": "transform_plant",    "name_zh": "变形植物",   "description": "从基础形延展增加而成的植物"},
+    {"id": "generative_object",  "name_zh": "生成式物体", "description": "通过多种动作生成的新物体"},
+    {"id": "theme_series",       "name_zh": "主题系列",   "description": "围绕主题的系列作品"},
+    {"id": "ip_prototype",       "name_zh": "IP雏形",     "description": "具备文创潜力的小型角色"},
+]
+
+
+# ============================================================
+# 便捷函数
+# ============================================================
+
+def get_all_transforms():
+    """获取7种变形动作"""
+    return TRANSFORM_ACTIONS
+
+
+def get_increase_subtypes():
+    """获取增加动作的5种子类型"""
+    return INCREASE_SUBTYPES
+
+
+def get_transform_by_id(action_id: str):
+    """根据ID获取变形动作"""
+    for a in TRANSFORM_ACTIONS:
+        if a["id"] == action_id:
+            return a
+    return None
+
+
+TOTAL_TRANSFORM_ACTIONS = len(TRANSFORM_ACTIONS)  # = 7
+TOTAL_INCREASE_SUBTYPES = len(INCREASE_SUBTYPES)   # = 5
+# ===== 文件: backend/services/auth_service.py =====
+"""
+绘创前程 — 认证服务
+家长注册 → 绑定孩子 → 登录
+"""
+import re
+import uuid
+from typing import Optional
+
+from core.database import get_db
+from core.security import hash_password, verify_password, create_access_token
+
+
+绘创前程 V1.0  第28页
+
+
+def register_parent(phone: str, password: str, nickname: str = "") -> dict:
+    """家长注册"""
+    if not re.match(r"^1[3-9]\d{9}$", phone):
+        raise ValueError("手机号格式不正确")
+    if len(password) < 6:
+        raise ValueError("密码至少6位")
+
+    with get_db() as conn:
+        existing = conn.execute("SELECT id FROM users WHERE phone = ?", (phone,)).fetchone()
+        if existing:
+            raise ValueError("该手机号已注册")
+
+        cursor = conn.execute(
+            """INSERT INTO users (phone, password_hash, role, nickname)
+               VALUES (?, ?, 'parent', ?)""",
+            (phone, hash_password(password), nickname or f"家长{phone[-4:]}")
+        )
+        parent_id = cursor.lastrowid
+
+    token = create_access_token(parent_id, "parent")
+    return {
+        "user_id": parent_id,
+        "role": "parent",
+        "nickname": nickname or f"家长{phone[-4:]}",
+        "token": token,
+    }
+
+
+def add_child(parent_id: int, nickname: str, age: int, gender: str = "unknown") -> dict:
+    """家长添加孩子"""
+    if age < 2 or age > 18:
+        raise ValueError("年龄应在2-18岁之间")
+
+    level_grade = _age_to_level(age)
+
+    with get_db() as conn:
+        # 创建孩子用户
+        cursor = conn.execute(
+            """INSERT INTO users (role, nickname, age, gender, level_grade)
+               VALUES ('child', ?, ?, ?, ?)""",
+            (nickname, age, gender, level_grade)
+        )
+        child_id = cursor.lastrowid
+
+        # 建立亲子关系
+        conn.execute(
+            """INSERT INTO user_relations (parent_id, child_id, relation_type)
+               VALUES (?, ?, 'parent_child')""",
+            (parent_id, child_id)
+
+绘创前程 V1.0  第29页
+
+        )
+
+    return {
+        "child_id": child_id,
+        "nickname": nickname,
+        "age": age,
+        "level_grade": level_grade,
+    }
+
+
+def login(phone: str, password: str) -> dict:
+    """登录"""
+    with get_db() as conn:
+        user = conn.execute(
+            "SELECT id, password_hash, role, nickname FROM users WHERE phone = ? AND is_active = 1",
+            (phone,)
+        ).fetchone()
+
+    if not user:
+        raise ValueError("手机号未注册")
+    if not verify_password(password, user["password_hash"]):
+        raise ValueError("密码错误")
+
+    token = create_access_token(user["id"], user["role"])
+    return {
+        "user_id": user["id"],
+        "role": user["role"],
+        "nickname": user["nickname"],
+        "token": token,
+    }
+
+
+def get_children(parent_id: int) -> list:
+    """获取家长绑定的所有孩子"""
+    with get_db() as conn:
+        rows = conn.execute(
+            """SELECT u.id, u.nickname, u.age, u.gender, u.level_grade, u.avatar_url
+               FROM users u
+               JOIN user_relations r ON r.child_id = u.id
+               WHERE r.parent_id = ? AND r.relation_type = 'parent_child' AND u.is_active = 1""",
+            (parent_id,)
+        ).fetchall()
+    return [dict(r) for r in rows]
+
+
+def switch_to_child(parent_id: int, child_id: int) -> dict:
+    """家长切换到孩子模式，生成孩子的访问令牌"""
+    with get_db() as conn:
+        relation = conn.execute(
+            """SELECT id FROM user_relations
+
+绘创前程 V1.0  第30页
+
+               WHERE parent_id = ? AND child_id = ? AND relation_type = 'parent_child' AND is_active = 1""",
+            (parent_id, child_id)
+        ).fetchone()
+
+    if not relation:
+        raise ValueError("无权访问该孩子账户")
+
+    with get_db() as conn:
+        child = conn.execute(
+            "SELECT id, nickname, age, level_grade FROM users WHERE id = ?",
+            (child_id,)
+        ).fetchone()
+
+    token = create_access_token(child["id"], "child", {"parent_id": parent_id})
+    return {
+        "child_id": child["id"],
+        "nickname": child["nickname"],
+        "age": child["age"],
+        "level_grade": child["level_grade"],
+        "token": token,
+    }
+
+
+def _age_to_level(age: int) -> str:
+    """根据年龄自动分配九级体系等级"""
+    if age <= 4:
+        return "prep"
+    elif age <= 5:
+        return "beginner_upper"
+    elif age <= 6:
+        return "beginner_lower"
+    elif age <= 8:
+        return "mid_upper"
+    elif age <= 10:
+        return "mid_lower"
+    elif age <= 12:
+        return "adv_upper"
+    elif age <= 14:
+        return "adv_lower"
+    else:
+        return "super_upper"
+# ===== 文件: backend/services/training_service.py =====
+"""
+绘创前程 — 训练引擎服务
+核心逻辑：根据孩子年龄和等级，生成个性化训练任务
+
+双训练体系：
+- 模块A：原型组合创意绘画（108种线条原型的识别→模仿→补全→迁移→创作）
+  - 轮廓装饰任务：从轮廓图形库选一个图形（动物/植物/物品），用线条原型装饰
+- 模块B：图形变形与结构生成（9种基础图形 × 7种变形动作）

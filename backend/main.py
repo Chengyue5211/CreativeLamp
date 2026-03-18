@@ -4,15 +4,16 @@
 """
 import os
 import time
+import secrets
 import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 
-from core.config import BASE_DIR, ENV, IS_PROD
+from core.config import BASE_DIR, ENV, IS_PROD, ALLOWED_ORIGIN
 from core.database import init_database
 
 # 日志配置
@@ -48,7 +49,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"] if not IS_PROD else [os.getenv("HC_ALLOWED_ORIGIN", "")],
+    allow_origins=["*"] if not IS_PROD else [ALLOWED_ORIGIN],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -56,11 +57,47 @@ app.add_middleware(
 
 
 # ============================================================
-# 安全头 + 请求日志中间件
+# CSRF 保护
+# ============================================================
+_CSRF_SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+_CSRF_HEADER = "X-CSRF-Token"
+_CSRF_COOKIE = "csrf_token"
+
+
+@app.get("/api/csrf-token")
+async def get_csrf_token(request: Request):
+    """获取 CSRF Token（前端在页面加载时调用）"""
+    token = secrets.token_urlsafe(32)
+    response = JSONResponse({"csrf_token": token})
+    response.set_cookie(
+        _CSRF_COOKIE, token,
+        httponly=True, samesite="strict",
+        secure=IS_PROD, max_age=86400,
+    )
+    return response
+
+
+# ============================================================
+# 安全头 + 请求日志 + CSRF校验 中间件
 # ============================================================
 @app.middleware("http")
 async def security_and_logging_middleware(request: Request, call_next):
     start = time.time()
+
+    # CSRF 校验：仅对非API的表单提交生效
+    # API端点(/api/)由 Bearer Token + CORS 保护，无需CSRF
+    # CSRF仅防护传统HTML表单提交（浏览器默认Content-Type）
+    if request.method not in _CSRF_SAFE_METHODS and not request.url.path.startswith("/api/"):
+        has_bearer = "authorization" in request.headers
+        if not has_bearer:
+            csrf_cookie = request.cookies.get(_CSRF_COOKIE)
+            csrf_header = request.headers.get(_CSRF_HEADER)
+            if not csrf_cookie or not csrf_header or csrf_cookie != csrf_header:
+                return JSONResponse(
+                    status_code=403,
+                    content={"detail": "CSRF验证失败，请刷新页面重试"},
+                )
+
     response = await call_next(request)
     duration = round((time.time() - start) * 1000, 1)
 
@@ -78,7 +115,7 @@ async def security_and_logging_middleware(request: Request, call_next):
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
         response.headers["Content-Security-Policy"] = (
             "default-src 'self'; "
-            "script-src 'self' 'unsafe-inline'; "
+            "script-src 'self'; "
             "style-src 'self' 'unsafe-inline'; "
             "img-src 'self' data: blob:; "
             "font-src 'self'; "

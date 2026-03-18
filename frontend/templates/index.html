@@ -14,6 +14,19 @@
         /* 防止闪烁 */
         #app-content { min-height: 100vh; }
     </style>
+    <script>
+        // 强制清除旧Service Worker缓存
+        if ("serviceWorker" in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function(regs) {
+                regs.forEach(function(r) { r.unregister(); });
+            });
+            if (window.caches) {
+                caches.keys().then(function(keys) {
+                    keys.forEach(function(k) { caches.delete(k); });
+                });
+            }
+        }
+    </script>
 </head>
 <body>
     <a href="#app" class="skip-link">跳转到主要内容</a>
@@ -25,14 +38,13 @@
             </div>
         </div>
     </div>
-    <script src="/static/js/line-svg.js"></script>
-    <script src="/static/js/transform-svg.js"></script>
-    <script src="/static/js/contour-svg.js"></script>
-    <script src="/static/js/app.js"></script>
-    <script>
-        if ('serviceWorker' in navigator) {
-            navigator.serviceWorker.register('/sw.js', {scope: '/'}).catch(() => {});
-        }
-    </script>
+    <script src="/static/js/line-svg.js?v=3"></script>
+    <script src="/static/js/transform-svg.js?v=3"></script>
+    <script src="/static/js/contour-svg.js?v=3"></script>
+    <script src="/static/js/utils.js?v=3"></script>
+    <script src="/static/js/api.js?v=3"></script>
+    <script src="/static/js/pages.js?v=3"></script>
+    <script src="/static/js/actions.js?v=3"></script>
+    <script src="/static/js/app.js?v=3"></script>
 </body>
 </html>

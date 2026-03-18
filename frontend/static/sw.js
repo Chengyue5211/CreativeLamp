@@ -2,9 +2,13 @@
  * 绘创前程 — Service Worker
  * 离线缓存策略：Shell带版本缓存 + API网络优先 + 图片stale-while-revalidate
  */
-const CACHE_VERSION = 'hc-v2';
+const CACHE_VERSION = 'hc-v3';
 const SHELL_URLS = [
     '/static/css/main.css',
+    '/static/js/utils.js',
+    '/static/js/api.js',
+    '/static/js/pages.js',
+    '/static/js/actions.js',
     '/static/js/app.js',
     '/static/js/line-svg.js',
     '/static/js/transform-svg.js',

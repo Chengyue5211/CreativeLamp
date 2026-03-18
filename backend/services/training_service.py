@@ -9,9 +9,23 @@
   7种动作：拉长/切分/叠加/拼接/缺口与添加/延展/增加
 """
 import json
+import os
 import random
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Optional
+
+# ============================================================
+# 时区处理：用户概念的"今天"应基于本地时区，而非UTC
+# 通过环境变量 HC_TIMEZONE_OFFSET 配置，默认 +8（中国标准时间）
+# ============================================================
+_TZ_OFFSET_HOURS = int(os.getenv("HC_TIMEZONE_OFFSET", "8"))
+_LOCAL_TZ = timezone(timedelta(hours=_TZ_OFFSET_HOURS))
+
+
+def _local_today() -> str:
+    """获取用户本地时区的今天日期字符串 (YYYY-MM-DD)"""
+    return datetime.now(_LOCAL_TZ).strftime("%Y-%m-%d")
+
 
 from core.database import get_db
 from data.prototypes import LINE_PROTOTYPE_CATEGORIES, SHAPE_PROTOTYPES, get_all_line_prototypes
@@ -174,7 +188,7 @@ def generate_daily_task(child_id: int) -> dict:
     task_b = _generate_module_b_task(child_id, config["module_b"], age)
 
     with get_db() as conn:
-        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        today = _local_today()
         existing = conn.execute(
             "SELECT id FROM tasks WHERE child_id = ? AND date(assigned_at) = ?",
             (child_id, today)
@@ -205,7 +219,7 @@ def generate_daily_task(child_id: int) -> dict:
 
 def get_today_tasks(child_id: int) -> dict:
     """获取今天的任务"""
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    today = _local_today()
     with get_db() as conn:
         child = conn.execute(
             "SELECT nickname, level_grade FROM users WHERE id = ?", (child_id,)

@@ -40,6 +40,28 @@ def init_database():
     """初始化数据库表结构"""
     with get_db() as conn:
         conn.executescript(SCHEMA_SQL)
+    # 增量迁移：executescript 会自动 COMMIT，需要新连接执行 ALTER TABLE
+    with get_db() as conn:
+        _migrate_add_columns(conn)
+
+
+def _migrate_add_columns(conn):
+    """增量迁移：安全地为已有表添加新列"""
+    migrations = [
+        ("users", "invite_code", "TEXT"),
+        ("users", "referred_by_id", "INTEGER REFERENCES users(id)"),
+        ("users", "credit_balance", "INTEGER DEFAULT 0"),
+    ]
+    for table, column, col_type in migrations:
+        try:
+            conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+        except Exception:
+            pass  # 列已存在，忽略
+    # 为新列创建索引
+    try:
+        conn.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_users_invite_code ON users(invite_code)")
+    except Exception:
+        pass
 
 
 # ============================================================
@@ -309,6 +331,31 @@ CREATE TABLE IF NOT EXISTS referral_rewards (
 );
 
 -- ========================================
+-- 7. 学币（积分）系统
+-- ========================================
+
+-- 学币交易流水
+CREATE TABLE IF NOT EXISTS credit_transactions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id),
+    amount INTEGER NOT NULL,             -- 正=收入, 负=支出 (单位:学币)
+    balance_after INTEGER NOT NULL,      -- 交易后余额
+    tx_type TEXT NOT NULL CHECK(tx_type IN (
+        'referral_signup',       -- 推荐注册奖励
+        'referral_l2_signup',    -- 二级推荐注册奖励
+        'welcome_bonus',         -- 被邀请人注册奖励
+        'milestone_bonus',       -- 里程碑奖励
+        'admin_adjustment',      -- 管理员调整
+        'course_purchase',       -- 课程消费
+        'merch_purchase',        -- 文创消费
+        'withdrawal'             -- 提现
+    )),
+    reference_id INTEGER,                -- 关联ID（referral_id等）
+    description TEXT,
+    created_at TEXT DEFAULT (datetime('now'))
+);
+
+-- ========================================
 -- 索引
 -- ========================================
 CREATE INDEX IF NOT EXISTS idx_users_phone ON users(phone);
@@ -341,4 +388,6 @@ CREATE INDEX IF NOT EXISTS idx_task_templates_active ON task_templates(is_active
 CREATE INDEX IF NOT EXISTS idx_merch_orders_child ON merch_orders(child_id);
 CREATE INDEX IF NOT EXISTS idx_referral_rewards_recipient ON referral_rewards(recipient_id);
 CREATE INDEX IF NOT EXISTS idx_work_metadata_module ON work_metadata(module);
+CREATE INDEX IF NOT EXISTS idx_credit_transactions_user ON credit_transactions(user_id);
+CREATE INDEX IF NOT EXISTS idx_credit_transactions_type ON credit_transactions(tx_type);
 """

@@ -37,22 +37,34 @@ security_scheme = HTTPBearer(auto_error=False)
 # ============================================================
 _token_blacklist: set[str] = set()
 _blacklist_expiry: dict[str, float] = {}
+_BLACKLIST_MAX_SIZE = 10000  # 防止内存无限增长
 
 
 def blacklist_token(jti: str, exp_timestamp: float):
     """将token加入黑名单"""
+    # 先清理过期条目，再检查容量
+    _cleanup_blacklist()
+    if len(_token_blacklist) >= _BLACKLIST_MAX_SIZE:
+        # 容量满时强制清理最早的条目
+        oldest = min(_blacklist_expiry, key=_blacklist_expiry.get)
+        _token_blacklist.discard(oldest)
+        _blacklist_expiry.pop(oldest, None)
     _token_blacklist.add(jti)
     _blacklist_expiry[jti] = exp_timestamp
 
 
-def is_token_blacklisted(jti: str) -> bool:
-    """检查token是否已被撤销"""
-    # 清理过期条目
+def _cleanup_blacklist():
+    """清理所有已过期的黑名单条目"""
     now = time.time()
     expired = [k for k, v in _blacklist_expiry.items() if v < now]
     for k in expired:
         _token_blacklist.discard(k)
         _blacklist_expiry.pop(k, None)
+
+
+def is_token_blacklisted(jti: str) -> bool:
+    """检查token是否已被撤销"""
+    _cleanup_blacklist()
     return jti in _token_blacklist
 
 

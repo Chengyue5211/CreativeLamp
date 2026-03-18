@@ -15,7 +15,8 @@ router = APIRouter()
 class RegisterRequest(BaseModel):
     phone: str = Field(..., pattern=r"^1[3-9]\d{9}$")
     password: str = Field(..., min_length=6, max_length=32)
-    nickname: str = Field(default="", max_length=20)
+    nickname: str = Field(default="", max_length=20, pattern=r"^[^<>&\"']*$")
+    invite_code: str = Field(default="", max_length=10)
 
 
 class LoginRequest(BaseModel):
@@ -24,18 +25,24 @@ class LoginRequest(BaseModel):
 
 
 class AddChildRequest(BaseModel):
-    nickname: str = Field(..., min_length=1, max_length=20)
+    nickname: str = Field(..., min_length=1, max_length=20, pattern=r"^[^<>&\"']+$")
     age: int = Field(..., ge=2, le=18)
     gender: str = Field(default="unknown", pattern=r"^(male|female|unknown)$")
 
 
 @router.post("/register")
 async def api_register(req: RegisterRequest, request: Request):
-    """家长注册"""
+    """家长注册（支持邀请码）"""
     client_ip = request.client.host if request.client else "unknown"
     check_rate_limit(f"register:{client_ip}", RATE_LIMIT_MAX_REGISTER)
     try:
-        return register_parent(req.phone, req.password, req.nickname)
+        result = register_parent(req.phone, req.password, req.nickname)
+        # 处理邀请码
+        if req.invite_code:
+            from services.referral_service import apply_referral
+            referral_result = apply_referral(result["user_id"], req.invite_code)
+            result["referral"] = referral_result
+        return result
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 

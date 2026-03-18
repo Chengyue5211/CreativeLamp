@@ -633,18 +633,204 @@ class TestParent:
 # ============================================================
 # 10. 未实现端点测试
 # ============================================================
-class TestStubs:
+class TestMerchSystem:
+    """文创系统完整测试"""
+
+    def _upload_work(self, client, child_token):
+        """辅助：上传一个作品，返回 work_id"""
+        from PIL import Image
+        img = Image.new("RGB", (50, 50), "blue")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        resp = client.post("/api/works/upload",
+            files={"image": ("merch_test.png", buf, "image/png")},
+            data={"title": "Merch Test Art"},
+            headers={"Authorization": f"Bearer {child_token}"},
+        )
+        assert resp.status_code == 200
+        return resp.json()["work_id"]
+
     def test_merch_types_public(self, client):
+        """文创产品列表无需认证"""
         resp = client.get("/api/merch/types")
         assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 7
+        assert any(t["id"] == "postcard" for t in data["merch_types"])
 
-    def test_merch_preview_requires_auth(self, client):
-        resp = client.post("/api/merch/preview")
-        assert resp.status_code in (401, 422)
+    def test_merch_types_have_price(self, client):
+        """产品列表包含价格信息"""
+        resp = client.get("/api/merch/types")
+        types = resp.json()["merch_types"]
+        for t in types:
+            assert "base_price" in t
+            assert "price_display" in t
+            assert t["base_price"] > 0
 
     def test_merch_order_requires_auth(self, client):
-        resp = client.post("/api/merch/order")
-        assert resp.status_code in (401, 422)
+        """下单需要认证"""
+        resp = client.post("/api/merch/order", json={
+            "merch_type_id": "postcard", "work_ids": [1]
+        })
+        assert resp.status_code == 401
+
+    def test_merch_orders_requires_auth(self, client):
+        """订单列表需要认证"""
+        resp = client.get("/api/merch/orders")
+        assert resp.status_code == 401
+
+    def test_merch_order_success(self, client, child_token, parent_token):
+        """成功下单"""
+        token, _ = child_token
+        work_id = self._upload_work(client, token)
+        resp = client.post("/api/merch/order",
+            json={"merch_type_id": "postcard", "work_ids": [work_id]},
+            headers={"Authorization": f"Bearer {parent_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["order_id"] > 0
+        assert data["merch_type"] == "明信片"
+        assert data["total_price"] == 500
+        assert data["credits_used"] == 0
+        assert data["amount_due"] == 500
+
+    def test_merch_order_with_credit_deduction(self, client, child_token):
+        """学币抵扣下单"""
+        token, _ = child_token
+        work_id = self._upload_work(client, token)
+
+        # 先给该家长充点学币：通过推荐
+        ts = int(time.time() * 1000) % 100000000
+        # 注册一个新家长，拿到他的 parent_token
+        resp = client.post("/api/auth/register", json={
+            "phone": f"136{ts:08d}", "password": "test123456", "nickname": "CreditTestParent"
+        })
+        credit_parent_token = resp.json()["token"]
+        credit_parent_id = resp.json()["user_id"]
+
+        # 添加孩子并上传作品
+        resp = client.post("/api/auth/children", json={
+            "nickname": "CreditChild", "age": 6, "gender": "male"
+        }, headers={"Authorization": f"Bearer {credit_parent_token}"})
+        credit_child_id = resp.json()["child_id"]
+        resp = client.post(f"/api/auth/switch-child/{credit_child_id}",
+            headers={"Authorization": f"Bearer {credit_parent_token}"})
+        credit_child_token = resp.json()["token"]
+
+        from PIL import Image
+        img = Image.new("RGB", (50, 50), "green")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        resp = client.post("/api/works/upload",
+            files={"image": ("credit_art.png", buf, "image/png")},
+            data={"title": "Credit Art"},
+            headers={"Authorization": f"Bearer {credit_child_token}"},
+        )
+        credit_work_id = resp.json()["work_id"]
+
+        # 手动加学币
+        from core.database import get_db
+        with get_db() as conn:
+            conn.execute("UPDATE users SET credit_balance = 200 WHERE id = ?", (credit_parent_id,))
+
+        # 下单并抵扣
+        resp = client.post("/api/merch/order",
+            json={"merch_type_id": "postcard", "work_ids": [credit_work_id], "use_credits": 200},
+            headers={"Authorization": f"Bearer {credit_parent_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["credits_used"] == 200
+        assert data["amount_due"] == 300  # 500 - 200
+
+        # 验证学币已扣
+        resp = client.get("/api/referral/balance",
+            headers={"Authorization": f"Bearer {credit_parent_token}"})
+        assert resp.json()["credit_balance"] == 0
+
+    def test_merch_order_invalid_type(self, client, child_token, parent_token):
+        """无效产品类型"""
+        token, _ = child_token
+        work_id = self._upload_work(client, token)
+        resp = client.post("/api/merch/order",
+            json={"merch_type_id": "nonexistent", "work_ids": [work_id]},
+            headers={"Authorization": f"Bearer {parent_token}"},
+        )
+        assert resp.status_code == 404
+
+    def test_merch_order_other_child_work(self, client, parent_token):
+        """不能用别人孩子的作品下单"""
+        resp = client.post("/api/merch/order",
+            json={"merch_type_id": "postcard", "work_ids": [99999]},
+            headers={"Authorization": f"Bearer {parent_token}"},
+        )
+        assert resp.status_code == 403
+
+    def test_merch_orders_list(self, client, child_token, parent_token):
+        """订单列表"""
+        token, _ = child_token
+        work_id = self._upload_work(client, token)
+        client.post("/api/merch/order",
+            json={"merch_type_id": "sticker", "work_ids": [work_id]},
+            headers={"Authorization": f"Bearer {parent_token}"},
+        )
+        resp = client.get("/api/merch/orders",
+            headers={"Authorization": f"Bearer {parent_token}"})
+        assert resp.status_code == 200
+        orders = resp.json()["orders"]
+        assert len(orders) >= 1
+
+    def test_merch_credit_cap(self, client, child_token):
+        """学币抵扣不超过产品价格"""
+        token, _ = child_token
+        work_id = self._upload_work(client, token)
+
+        ts = int(time.time() * 1000) % 100000000
+        resp = client.post("/api/auth/register", json={
+            "phone": f"135{ts:08d}", "password": "test123456", "nickname": "CapTestParent"
+        })
+        cap_token = resp.json()["token"]
+        cap_id = resp.json()["user_id"]
+
+        resp = client.post("/api/auth/children", json={
+            "nickname": "CapChild", "age": 7, "gender": "female"
+        }, headers={"Authorization": f"Bearer {cap_token}"})
+        cap_child_id = resp.json()["child_id"]
+        resp = client.post(f"/api/auth/switch-child/{cap_child_id}",
+            headers={"Authorization": f"Bearer {cap_token}"})
+        cap_child_token = resp.json()["token"]
+
+        from PIL import Image
+        img = Image.new("RGB", (50, 50), "red")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        resp = client.post("/api/works/upload",
+            files={"image": ("cap_art.png", buf, "image/png")},
+            data={"title": "Cap Art"},
+            headers={"Authorization": f"Bearer {cap_child_token}"},
+        )
+        cap_work_id = resp.json()["work_id"]
+
+        from core.database import get_db
+        with get_db() as conn:
+            conn.execute("UPDATE users SET credit_balance = 9999 WHERE id = ?", (cap_id,))
+
+        resp = client.post("/api/merch/order",
+            json={"merch_type_id": "postcard", "work_ids": [cap_work_id], "use_credits": 9999},
+            headers={"Authorization": f"Bearer {cap_token}"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["credits_used"] == 500  # capped at product price
+        assert data["amount_due"] == 0
+
+
+class TestStubs:
+    """认证保护验证"""
 
     def test_referral_code_requires_auth(self, client):
         resp = client.get("/api/referral/my-code")
@@ -656,7 +842,137 @@ class TestStubs:
 
 
 # ============================================================
-# 11. 健康检查
+# 11. 成长档案/展示系统测试
+# ============================================================
+class TestShowcaseGrowth:
+    """成长档案与展示系统"""
+
+    def test_growth_requires_auth(self, client):
+        """成长档案需要认证"""
+        resp = client.get("/api/showcase/growth")
+        assert resp.status_code == 401
+
+    def test_growth_empty(self, client, child_token):
+        """新用户成长档案 — 空数据"""
+        token, _ = child_token
+        resp = client.get("/api/showcase/growth",
+                         headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["stats"]["total_works"] == 0
+        assert data["stats"]["total_tasks"] == 0
+        assert data["ability_radar"] is None
+        assert data["best_work"] is None
+        assert data["recent_works"] == []
+        assert data["monthly_works"] == []
+
+    def test_growth_with_works(self, client, child_token):
+        """有作品后的成长档案"""
+        token, _ = child_token
+
+        # 上传几个作品
+        from PIL import Image
+        for i, color in enumerate(["red", "green", "blue"]):
+            img = Image.new("RGB", (50, 50), color)
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            client.post("/api/works/upload",
+                files={"image": (f"growth_{i}.png", buf, "image/png")},
+                data={"title": f"Growth Art {i}"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        resp = client.get("/api/showcase/growth",
+                         headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["stats"]["total_works"] >= 3
+        assert len(data["recent_works"]) >= 3
+        assert len(data["monthly_works"]) >= 1
+
+    def test_growth_with_evaluation(self, client, child_token, parent_token):
+        """评价后的成长档案 — 含能力雷达图"""
+        token, _ = child_token
+
+        from PIL import Image
+        img = Image.new("RGB", (50, 50), "purple")
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        buf.seek(0)
+        resp = client.post("/api/works/upload",
+            files={"image": ("eval_growth.png", buf, "image/png")},
+            data={"title": "Evaluated Art"},
+            headers={"Authorization": f"Bearer {token}"},
+        )
+        work_id = resp.json()["work_id"]
+
+        # 家长评价
+        client.post(f"/api/works/{work_id}/evaluate",
+            json={"originality": 8, "detail": 7, "composition": 9, "expression": 8.5, "feedback": "Great!"},
+            headers={"Authorization": f"Bearer {parent_token}"},
+        )
+
+        resp = client.get("/api/showcase/growth",
+                         headers={"Authorization": f"Bearer {token}"})
+        data = resp.json()
+        assert data["stats"]["evaluated_works"] >= 1
+        assert data["ability_radar"] is not None
+        assert data["ability_radar"]["originality"] > 0
+        assert data["best_work"] is not None
+        assert data["best_work"]["avg_score"] > 0
+        assert len(data["eval_trend"]) >= 1
+
+    def test_growth_child_info(self, client, child_token):
+        """成长档案包含孩子基本信息"""
+        token, _ = child_token
+        resp = client.get("/api/showcase/growth",
+                         headers={"Authorization": f"Bearer {token}"})
+        data = resp.json()
+        assert "child" in data
+        assert "nickname" in data["child"]
+        assert "age" in data["child"]
+        assert "level_grade" in data["child"]
+        assert "joined_at" in data["child"]
+
+    def test_growth_stats_structure(self, client, child_token):
+        """成长档案统计结构完整"""
+        token, _ = child_token
+        resp = client.get("/api/showcase/growth",
+                         headers={"Authorization": f"Bearer {token}"})
+        stats = resp.json()["stats"]
+        expected_keys = ["total_works", "total_tasks", "completed_tasks",
+                        "in_progress_tasks", "module_a_tasks", "module_b_tasks",
+                        "evaluated_works"]
+        for key in expected_keys:
+            assert key in stats, f"Missing key: {key}"
+
+    def test_growth_monthly_aggregation(self, client, child_token):
+        """月度统计正确聚合"""
+        token, _ = child_token
+
+        from PIL import Image
+        for i in range(3):
+            img = Image.new("RGB", (30, 30), "cyan")
+            buf = io.BytesIO()
+            img.save(buf, format="PNG")
+            buf.seek(0)
+            client.post("/api/works/upload",
+                files={"image": (f"monthly_{i}.png", buf, "image/png")},
+                data={"title": f"Monthly {i}"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+
+        resp = client.get("/api/showcase/growth",
+                         headers={"Authorization": f"Bearer {token}"})
+        monthly = resp.json()["monthly_works"]
+        assert len(monthly) >= 1
+        # 当月应有多个作品
+        assert monthly[0]["count"] >= 3
+
+
+# ============================================================
+# 12. 健康检查
 # ============================================================
 class TestHealth:
     def test_health_ok(self, client):
@@ -719,4 +1035,173 @@ class TestE2EFlow:
         # 查看成长档案
         resp = client.get("/api/showcase/growth",
                          headers={"Authorization": f"Bearer {token}"})
+        assert resp.status_code == 200
+
+
+# ============================================================
+# 推广裂变系统测试
+# ============================================================
+
+class TestReferralSystem:
+    """推广系统完整测试"""
+
+    def _register(self, client, phone, invite_code=""):
+        """辅助：注册用户"""
+        data = {"phone": phone, "password": "test123456", "nickname": f"User{phone[-4:]}"}
+        if invite_code:
+            data["invite_code"] = invite_code
+        resp = client.post("/api/auth/register", json=data)
+        assert resp.status_code == 200
+        return resp.json()
+
+    def test_get_invite_code(self, client):
+        """获取邀请码"""
+        u = self._register(client, f"139{int(time.time()*1000)%100000000:08d}")
+        resp = client.get("/api/referral/my-code",
+                         headers={"Authorization": f"Bearer {u['token']}"})
+        assert resp.status_code == 200
+        code = resp.json()["invite_code"]
+        assert len(code) == 6
+
+    def test_invite_code_stable(self, client):
+        """邀请码多次获取应一致"""
+        u = self._register(client, f"139{int(time.time()*1000)%100000000:08d}")
+        h = {"Authorization": f"Bearer {u['token']}"}
+        c1 = client.get("/api/referral/my-code", headers=h).json()["invite_code"]
+        c2 = client.get("/api/referral/my-code", headers=h).json()["invite_code"]
+        assert c1 == c2
+
+    def test_validate_code_valid(self, client):
+        """验证有效邀请码"""
+        u = self._register(client, f"139{int(time.time()*1000)%100000000:08d}")
+        code = client.get("/api/referral/my-code",
+                         headers={"Authorization": f"Bearer {u['token']}"}).json()["invite_code"]
+        resp = client.post("/api/referral/validate-code", json={"code": code})
+        assert resp.status_code == 200
+        assert resp.json()["valid"] is True
+
+    def test_validate_code_invalid(self, client):
+        """验证无效邀请码"""
+        resp = client.post("/api/referral/validate-code", json={"code": "ZZZZZZ"})
+        assert resp.status_code == 200
+        assert resp.json()["valid"] is False
+
+    def test_register_with_invite_code(self, client):
+        """带邀请码注册 — L1奖励"""
+        ts = int(time.time() * 1000) % 100000000
+        u_a = self._register(client, f"139{ts:08d}")
+        h_a = {"Authorization": f"Bearer {u_a['token']}"}
+        code = client.get("/api/referral/my-code", headers=h_a).json()["invite_code"]
+
+        # B使用A的邀请码注册
+        u_b = self._register(client, f"138{ts:08d}", invite_code=code)
+        assert "referral" in u_b
+        assert u_b["referral"]["applied"] is True
+
+        # A应该有50学币
+        dash = client.get("/api/referral/dashboard", headers=h_a).json()
+        assert dash["credit_balance"] == 50
+        assert dash["total_referrals"] == 1
+
+        # B应该有30学币
+        h_b = {"Authorization": f"Bearer {u_b['token']}"}
+        bal = client.get("/api/referral/balance", headers=h_b).json()
+        assert bal["credit_balance"] == 30
+
+    def test_l2_referral_reward(self, client):
+        """二级推荐奖励"""
+        ts = int(time.time() * 1000) % 100000000
+        u_a = self._register(client, f"139{ts:08d}")
+        h_a = {"Authorization": f"Bearer {u_a['token']}"}
+        code_a = client.get("/api/referral/my-code", headers=h_a).json()["invite_code"]
+
+        # B用A的码注册
+        u_b = self._register(client, f"138{ts:08d}", invite_code=code_a)
+        h_b = {"Authorization": f"Bearer {u_b['token']}"}
+        code_b = client.get("/api/referral/my-code", headers=h_b).json()["invite_code"]
+
+        # C用B的码注册 → A应获得L2奖励(+10)
+        self._register(client, f"137{ts:08d}", invite_code=code_b)
+
+        dash_a = client.get("/api/referral/dashboard", headers=h_a).json()
+        assert dash_a["credit_balance"] == 60  # 50(L1) + 10(L2)
+        assert dash_a["total_earned"] == 60
+
+    def test_self_referral_blocked(self, client):
+        """不能使用自己的邀请码"""
+        ts = int(time.time() * 1000) % 100000000
+        u = self._register(client, f"139{ts:08d}")
+        h = {"Authorization": f"Bearer {u['token']}"}
+        code = client.get("/api/referral/my-code", headers=h).json()["invite_code"]
+
+        # 用自己的码再注册一个用户，然后手动测试apply
+        from services.referral_service import apply_referral
+        result = apply_referral(u["user_id"], code)
+        assert result["applied"] is False
+        assert "自己" in result["reason"]
+
+    def test_duplicate_referral_blocked(self, client):
+        """不能重复绑定邀请人"""
+        ts = int(time.time() * 1000) % 100000000
+        u_a = self._register(client, f"139{ts:08d}")
+        h_a = {"Authorization": f"Bearer {u_a['token']}"}
+        code = client.get("/api/referral/my-code", headers=h_a).json()["invite_code"]
+
+        u_b = self._register(client, f"138{ts:08d}", invite_code=code)
+
+        from services.referral_service import apply_referral
+        result = apply_referral(u_b["user_id"], code)
+        assert result["applied"] is False
+
+    def test_referral_list(self, client):
+        """推荐记录列表"""
+        ts = int(time.time() * 1000) % 100000000
+        u_a = self._register(client, f"139{ts:08d}")
+        h_a = {"Authorization": f"Bearer {u_a['token']}"}
+        code = client.get("/api/referral/my-code", headers=h_a).json()["invite_code"]
+
+        self._register(client, f"138{ts:08d}", invite_code=code)
+
+        resp = client.get("/api/referral/referrals", headers=h_a)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 1
+        assert len(data["items"]) == 1
+
+    def test_reward_history(self, client):
+        """学币流水记录"""
+        ts = int(time.time() * 1000) % 100000000
+        u_a = self._register(client, f"139{ts:08d}")
+        h_a = {"Authorization": f"Bearer {u_a['token']}"}
+        code = client.get("/api/referral/my-code", headers=h_a).json()["invite_code"]
+
+        self._register(client, f"138{ts:08d}", invite_code=code)
+
+        resp = client.get("/api/referral/rewards", headers=h_a)
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] >= 1
+        assert data["items"][0]["amount"] == 50
+
+    def test_dashboard_milestone_tracking(self, client):
+        """仪表盘里程碑追踪"""
+        ts = int(time.time() * 1000) % 100000000
+        u_a = self._register(client, f"139{ts:08d}")
+        h_a = {"Authorization": f"Bearer {u_a['token']}"}
+
+        dash = client.get("/api/referral/dashboard", headers=h_a).json()
+        assert dash["next_milestone"]["target"] == 5
+        assert dash["next_milestone"]["current"] == 0
+
+    def test_referral_requires_auth(self, client):
+        """推广接口需要认证"""
+        assert client.get("/api/referral/my-code").status_code == 401
+        assert client.get("/api/referral/dashboard").status_code == 401
+        assert client.get("/api/referral/referrals").status_code == 401
+        assert client.get("/api/referral/rewards").status_code == 401
+        assert client.get("/api/referral/balance").status_code == 401
+
+    def test_validate_code_no_auth_required(self, client):
+        """验证邀请码不需要登录"""
+        resp = client.post("/api/referral/validate-code", json={"code": "ABCDEF"})
         assert resp.status_code == 200
