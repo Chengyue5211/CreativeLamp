@@ -15,8 +15,8 @@ async function doRegister() {
         const resp = await API.register({ phone, password, nickname, invite_code });
         APP.token = resp.token;
         APP.user = resp;
-        sessionStorage.setItem("hc_token", resp.token);
-        sessionStorage.setItem("hc_user", JSON.stringify(resp));
+        localStorage.setItem("hc_token", resp.token);
+        localStorage.setItem("hc_user", JSON.stringify(resp));
         showToast("注册成功！", "success");
         navigate("parent-home");
     } catch (e) {
@@ -34,8 +34,8 @@ async function doLogin() {
         const resp = await API.login({ phone, password });
         APP.token = resp.token;
         APP.user = resp;
-        sessionStorage.setItem("hc_token", resp.token);
-        sessionStorage.setItem("hc_user", JSON.stringify(resp));
+        localStorage.setItem("hc_token", resp.token);
+        localStorage.setItem("hc_user", JSON.stringify(resp));
         showToast("登录成功！", "success");
         navigate("parent-home");
     } catch (e) {
@@ -56,8 +56,10 @@ async function doLogout() {
         APP.user = null;
         APP.childToken = null;
         APP.currentChild = null;
-        sessionStorage.removeItem("hc_token");
-        sessionStorage.removeItem("hc_user");
+        localStorage.removeItem("hc_token");
+        localStorage.removeItem("hc_user");
+        localStorage.removeItem("hc_child_token");
+        localStorage.removeItem("hc_child");
         navigate("login");
     }
 }
@@ -83,6 +85,8 @@ async function selectChild(childId) {
         const resp = await API.switchChild(childId);
         APP.childToken = resp.token;
         APP.currentChild = resp;
+        localStorage.setItem("hc_child_token", resp.token);
+        localStorage.setItem("hc_child", JSON.stringify(resp));
         navigate("child-home");
     } catch (e) {
         showToast(e.message, "error");
@@ -92,6 +96,8 @@ async function selectChild(childId) {
 function backToParent() {
     APP.childToken = null;
     APP.currentChild = null;
+    localStorage.removeItem("hc_child_token");
+    localStorage.removeItem("hc_child");
     navigate("parent-home");
 }
 

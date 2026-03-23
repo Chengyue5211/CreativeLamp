@@ -61,8 +61,8 @@ if ("serviceWorker" in navigator) {
 }
 
 document.addEventListener("DOMContentLoaded", () => {
-    const savedToken = sessionStorage.getItem("hc_token");
-    const savedUser = sessionStorage.getItem("hc_user");
+    const savedToken = localStorage.getItem("hc_token");
+    const savedUser = localStorage.getItem("hc_user");
 
     // 检查 URL 中的邀请码参数
     const urlParams = new URLSearchParams(location.search);
@@ -72,7 +72,16 @@ document.addEventListener("DOMContentLoaded", () => {
         try {
             APP.token = savedToken;
             APP.user = JSON.parse(savedUser);
-            navigate("parent-home");
+            // 恢复孩子会话（如果之前选过孩子）
+            const savedChildToken = localStorage.getItem("hc_child_token");
+            const savedChild = localStorage.getItem("hc_child");
+            if (savedChildToken && savedChild) {
+                APP.childToken = savedChildToken;
+                APP.currentChild = JSON.parse(savedChild);
+                navigate("child-home");
+            } else {
+                navigate("parent-home");
+            }
         } catch {
             navigate(inviteCode ? "register" : "login", { inviteCode });
         }

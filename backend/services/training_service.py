@@ -190,8 +190,8 @@ def generate_daily_task(child_id: int) -> dict:
     with get_db() as conn:
         today = _local_today()
         existing = conn.execute(
-            "SELECT id FROM tasks WHERE child_id = ? AND date(assigned_at) = ?",
-            (child_id, today)
+            "SELECT id FROM tasks WHERE child_id = ? AND date(assigned_at, ?) = ?",
+            (child_id, f"+{_TZ_OFFSET_HOURS} hours", today)
         ).fetchone()
 
         if existing:
@@ -232,9 +232,9 @@ def get_today_tasks(child_id: int) -> dict:
                       tt.requirement_json, tt.estimated_minutes
                FROM tasks t
                JOIN task_templates tt ON t.template_id = tt.id
-               WHERE t.child_id = ? AND date(t.assigned_at) = ?
+               WHERE t.child_id = ? AND date(t.assigned_at, ?) = ?
                ORDER BY tt.module""",
-            (child_id, today)
+            (child_id, f"+{_TZ_OFFSET_HOURS} hours", today)
         ).fetchall()
 
     if not rows:

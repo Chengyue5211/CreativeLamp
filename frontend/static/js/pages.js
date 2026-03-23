@@ -350,7 +350,7 @@ async function renderParentWorkDetail(container, params) {
                             <div style="margin-bottom:12px;">
                                 <div style="display:flex; justify-content:space-between; margin-bottom:4px;">
                                     <span style="font-size:0.85rem; font-weight:600;">${d.icon} ${d.name}</span>
-                                    <span id="p-score-label-${d.key}" style="font-weight:700; color:${d.color};">7</span>
+                                    <span><span id="p-score-label-${d.key}" style="font-weight:700; color:${d.color};">7</span><span style="font-size:0.75rem; color:var(--gray-400);">/10</span></span>
                                 </div>
                                 <input type="range" id="p-score-${d.key}" min="0" max="10" step="0.5" value="7"
                                     oninput="document.getElementById('p-score-label-${d.key}').textContent=this.value"
@@ -936,9 +936,9 @@ async function renderPrintPreview(container, params) {
                 <div class="card-title">打印份数</div>
                 <p style="font-size:0.82rem; color:var(--gray-600); margin-bottom:10px;">同一个图形可以打印多张，用不同的风格来画！</p>
                 <div style="display:flex; align-items:center; gap:12px; margin-bottom:10px;">
-                    <button data-action="change-print" data-delta="-1" style="width:36px; height:36px; border-radius:50%; border:2px solid var(--primary-300); background:var(--primary-50); font-size:1.2rem; cursor:pointer;">-</button>
+                    <button data-action="change-print" data-delta="-1" style="width:44px; height:44px; border-radius:50%; border:2px solid var(--primary-300); background:var(--primary-50); font-size:1.2rem; cursor:pointer;">-</button>
                     <span id="print-count" style="font-size:1.5rem; font-weight:700; color:var(--primary-600); min-width:30px; text-align:center;">1</span>
-                    <button data-action="change-print" data-delta="1" style="width:36px; height:36px; border-radius:50%; border:2px solid var(--primary-300); background:var(--primary-50); font-size:1.2rem; cursor:pointer;">+</button>
+                    <button data-action="change-print" data-delta="1" style="width:44px; height:44px; border-radius:50%; border:2px solid var(--primary-300); background:var(--primary-50); font-size:1.2rem; cursor:pointer;">+</button>
                     <span style="font-size:0.8rem; color:var(--gray-500);">张</span>
                 </div>
             </div>
@@ -1094,18 +1094,18 @@ async function renderGrowth(container) {
                 </div>
             </div>
             <div class="page">
-                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; margin-bottom:16px;">
-                    <div class="card" style="text-align:center; background:var(--primary-50); padding:12px 6px;">
-                        <div style="font-size:1.8rem; font-weight:800; color:var(--primary-600);">${stats.total_works || 0}</div>
-                        <div style="font-size:0.72rem; color:var(--gray-500);">件作品</div>
+                <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; margin-bottom:16px;">
+                    <div class="card" style="text-align:center; background:var(--primary-50); padding:14px 8px;">
+                        <div style="font-size:1.6rem; font-weight:800; color:var(--primary-600);">${stats.total_works || 0}</div>
+                        <div style="font-size:0.75rem; color:var(--gray-500);">件作品</div>
                     </div>
-                    <div class="card" style="text-align:center; background:var(--accent-50); padding:12px 6px;">
-                        <div style="font-size:1.8rem; font-weight:800; color:var(--accent-600);">${stats.completed_tasks || 0}</div>
-                        <div style="font-size:0.72rem; color:var(--gray-500);">完成任务</div>
+                    <div class="card" style="text-align:center; background:var(--accent-50); padding:14px 8px;">
+                        <div style="font-size:1.6rem; font-weight:800; color:var(--accent-600);">${stats.completed_tasks || 0}</div>
+                        <div style="font-size:0.75rem; color:var(--gray-500);">完成任务</div>
                     </div>
-                    <div class="card" style="text-align:center; background:#FFF4EB; padding:12px 6px;">
-                        <div style="font-size:1.8rem; font-weight:800; color:#D98B5F;">${stats.evaluated_works || 0}</div>
-                        <div style="font-size:0.72rem; color:var(--gray-500);">已评价</div>
+                    <div class="card" style="text-align:center; background:#FFF4EB; padding:14px 8px;">
+                        <div style="font-size:1.6rem; font-weight:800; color:#D98B5F;">${stats.evaluated_works || 0}</div>
+                        <div style="font-size:0.75rem; color:var(--gray-500);">已评价</div>
                     </div>
                 </div>
 
@@ -1403,7 +1403,7 @@ async function renderWorkDetail(container, params) {
                                         <span style="font-weight:600; font-size:0.9rem;">${d.icon} ${d.name}</span>
                                         <span style="font-size:0.72rem; color:var(--gray-400); margin-left:4px;">${d.desc}</span>
                                     </div>
-                                    <span id="score-label-${d.key}" style="font-size:1rem; font-weight:700; color:${d.color}; min-width:30px; text-align:right;">5</span>
+                                    <span><span id="score-label-${d.key}" style="font-size:1rem; font-weight:700; color:${d.color};">5</span><span style="font-size:0.75rem; color:var(--gray-400);">/10</span></span>
                                 </div>
                                 <input type="range" id="score-${d.key}" min="0" max="10" step="0.5" value="5"
                                     oninput="document.getElementById('score-label-${d.key}').textContent = this.value"
